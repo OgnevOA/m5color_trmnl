@@ -41,6 +41,28 @@ def _palette_image() -> Image.Image:
     return pal_img
 
 
+def auto_orient(img: Image.Image, auto_rotate: bool = True) -> Image.Image:
+    """Normalize image orientation for the portrait 400x600 panel.
+
+    1. Apply the EXIF orientation tag (phone photos are often stored rotated).
+    2. If ``auto_rotate`` and the image orientation does not match the target
+       (e.g. a landscape photo on a portrait display), rotate it 90 degrees so
+       it fills the frame instead of being heavily cropped.
+    """
+    try:
+        img = ImageOps.exif_transpose(img)
+    except Exception:
+        pass
+
+    if auto_rotate:
+        target_is_landscape = TARGET_WIDTH > TARGET_HEIGHT
+        img_is_landscape = img.width > img.height
+        if img_is_landscape != target_is_landscape:
+            # expand=True keeps the full image; rotate clockwise.
+            img = img.rotate(-90, expand=True)
+    return img
+
+
 def fit_to_target(
     img: Image.Image,
     mode: FitMode = "cover",
@@ -77,9 +99,11 @@ def png_bytes_to_display_png(
     fit_mode: FitMode = "cover",
     background: tuple[int, int, int] = (255, 255, 255),
     dither: bool = True,
+    auto_rotate: bool = True,
 ) -> bytes:
     """Full pipeline: raw image bytes -> 400x600 Spectra-6 PNG bytes."""
     img = Image.open(io.BytesIO(data))
+    img = auto_orient(img, auto_rotate=auto_rotate)
     fitted = fit_to_target(img, mode=fit_mode, background=background)
     quantized = quantize_to_palette(fitted, dither=dither)
     out = io.BytesIO()

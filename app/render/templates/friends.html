@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      {{ base_css | safe }}
+      .content {
+        flex-direction: column;
+        justify-content: center;
+        align-items: stretch;
+        text-align: left;
+      }
+      .quote-line { margin-bottom: 16px; }
+      .speaker {
+        font-size: 15px;
+        font-weight: 700;
+        color: #1f50c8;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 3px;
+      }
+      .line {
+        font-size: {{ font_px }}px;
+        line-height: 1.3;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .attribution { font-style: italic; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="header accent-red">Friends</div>
+      <div class="content">
+        {% for d in dialogue %}
+        <div class="quote-line">
+          {% if d.speaker %}<div class="speaker">{{ d.speaker }}</div>{% endif %}
+          <div class="line">{{ d.text }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="footer">
+        <span class="attribution">{{ attribution }}</span>
+      </div>
+    </div>
+  </body>
+</html>

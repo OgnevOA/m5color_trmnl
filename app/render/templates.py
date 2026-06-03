@@ -50,3 +50,34 @@ def render_placeholder_html(title: str, body: str) -> str:
         body=body,
         footer_right=datetime.now().strftime("%Y-%m-%d %H:%M"),
     )
+
+
+def _font_size_for(text_length: int) -> int:
+    """Pick a font size so longer quotes still fit the 400x600 panel."""
+    if text_length <= 80:
+        return 30
+    if text_length <= 160:
+        return 24
+    if text_length <= 260:
+        return 20
+    if text_length <= 380:
+        return 17
+    return 15
+
+
+def render_friends_quote_html(
+    dialogue: list[dict],
+    attribution: str = "",
+) -> str:
+    """Render a Friends quote card.
+
+    ``dialogue`` is a list of ``{"speaker": str, "text": str}`` items.
+    """
+    total = sum(len(str(d.get("text", ""))) for d in dialogue)
+    template = _env().get_template("friends.html")
+    return template.render(
+        base_css=_base_css(),
+        dialogue=dialogue,
+        attribution=attribution,
+        font_px=_font_size_for(total),
+    )
