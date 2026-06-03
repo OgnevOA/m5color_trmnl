@@ -1,0 +1,13 @@
+.git
+.gitignore
+.github
+data
+mock_display
+.client_state.json
+.env
+**/__pycache__
+*.pyc
+.venv
+venv
+plan.md
+README.md

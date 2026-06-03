@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# App runtime data
+/data/
+mock_display/
+.client_state.json
+
+# Secrets / local config
+.env
+
+# OS / editor
+.DS_Store
+
+# Planning artifact (not part of the deliverable repo)
+plan.md
+
+# Firmware sketch holds WiFi credentials/secrets for now; push later
+m5color_trmnl.ino

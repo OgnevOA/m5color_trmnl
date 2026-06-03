@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      {{ base_css | safe }}
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="header">{{ title }}</div>
+      <div class="content">
+        <div class="body-text">{{ body }}</div>
+      </div>
+      <div class="footer">
+        <span>{{ footer_left }}</span>
+        <span>{{ footer_right }}</span>
+      </div>
+    </div>
+  </body>
+</html>
