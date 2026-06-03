@@ -106,15 +106,21 @@ The published image already contains Chromium and all browser dependencies
 (it is based on the official Playwright Python image).
 
 1. Copy `.env.example` to `.env` and fill in `DEVICE_TOKEN`,
-   `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_ALLOWED_USER_IDS`.
-2. Edit `docker-compose.yml` and replace `<owner>` with your GitHub
-   user/org (lowercase) so it pulls `ghcr.io/<owner>/m5color-trmnl:latest`.
+   `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_ALLOWED_USER_IDS`. Set
+   `PUBLIC_BASE_URL` to the host address including the published port
+   (e.g. `http://<host-ip>:17555`).
+2. The image is public, so no registry login is needed:
+   `ghcr.io/ognevoa/m5color-trmnl:latest`.
 3. Deploy:
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
+
+The app listens on port `8000` inside the container and is published on host
+port **17555** (see `docker-compose.yml`). Reach the API at
+`http://<host-ip>:17555/health`.
 
 Persistent data (SQLite DB, rendered images, uploads) is stored in `./data`
 mounted at `/data` in the container. On TrueNAS Scale, point this at a

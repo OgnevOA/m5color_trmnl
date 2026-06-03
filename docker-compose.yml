@@ -1,15 +1,16 @@
 services:
   trmnl:
-    # Image published by GitHub Actions. Replace <owner> with your GitHub
-    # org/user (lowercase). On TrueNAS Scale this is pulled from ghcr.io.
-    image: ghcr.io/<owner>/m5color-trmnl:latest
+    # Public image published by GitHub Actions; pulled from ghcr.io.
+    image: ghcr.io/ognevoa/m5color-trmnl:latest
     # To build locally instead of pulling, comment out `image:` above and
     # uncomment the line below:
     # build: .
     container_name: m5color-trmnl
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      # host:container -- the app listens on 8000 inside the container and is
+      # exposed on 17555 on the host (PUBLIC_BASE_URL must use :17555).
+      - "17555:8000"
     env_file:
       - .env
     volumes:
