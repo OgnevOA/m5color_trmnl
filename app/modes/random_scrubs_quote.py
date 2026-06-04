@@ -10,4 +10,5 @@ class RandomScrubsQuoteMode(JsonQuoteMode):
     description = "Display a random quote from Scrubs."
     data_file = "scrubs.json"
     show_title = "Scrubs"
+    logo_file = "scrubs_header.png"
     fallback_text = "Newbie..."

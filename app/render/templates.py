@@ -13,6 +13,27 @@ from qrcode.constants import ERROR_CORRECT_M
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
+_ASSETS_DIR = Path(__file__).parent.parent / "assets"
+
+
+@lru_cache(maxsize=None)
+def _logo_data_uri(filename: str) -> tuple[str, int, int] | None:
+    """Return ``(data_uri, width, height)`` for a normalized header PNG.
+
+    Dimensions are parsed straight from the PNG IHDR chunk so the template can
+    place the logo at its natural 1:1 pixel size (crisp, no browser scaling).
+    """
+    path = _ASSETS_DIR / filename
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    width = int.from_bytes(data[16:20], "big")
+    height = int.from_bytes(data[20:24], "big")
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:image/png;base64,{encoded}", width, height
 
 
 @lru_cache
@@ -124,12 +145,16 @@ def render_quote_card_html(
     season: int | None = None,
     episode: int | None = None,
     episode_title: str | None = None,
+    logo_file: str | None = None,
 ) -> str:
     """Render a TV-show quote card (serif italic quote, black on white).
 
     ``dialogue`` is a list of ``{"speaker": str, "text": str}`` items. A single
     line renders as one big centered quote with the speaker in the footer; a
     multi-line exchange renders each line with an inline speaker label.
+
+    ``logo_file`` is a normalized header PNG in ``app/assets``; when present it
+    is shown as the card header, otherwise ``show_title`` is used as text.
     """
     single = len(dialogue) == 1
     total = sum(len(str(d.get("text", ""))) for d in dialogue)
@@ -143,6 +168,9 @@ def render_quote_card_html(
     else:
         ep_code = ""
 
+    logo = _logo_data_uri(logo_file) if logo_file else None
+    logo_uri, logo_w, logo_h = logo if logo else (None, 0, 0)
+
     font_px = _single_quote_font_size(total) if single else _font_size_for(total)
     template = _env().get_template("quote.html")
     return template.render(
@@ -154,5 +182,8 @@ def render_quote_card_html(
         text=text,
         ep_code=ep_code,
         episode_title=episode_title or "",
+        logo_uri=logo_uri,
+        logo_w=logo_w,
+        logo_h=logo_h,
         font_px=font_px,
     )

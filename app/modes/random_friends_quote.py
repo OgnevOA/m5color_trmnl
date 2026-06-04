@@ -10,4 +10,5 @@ class RandomFriendsQuoteMode(JsonQuoteMode):
     description = "Display a random quote from Friends."
     data_file = "friends.json"
     show_title = "Friends"
+    logo_file = "friends_header.png"
     fallback_text = "How you doin'?"

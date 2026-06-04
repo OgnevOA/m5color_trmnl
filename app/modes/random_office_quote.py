@@ -10,4 +10,5 @@ class RandomOfficeQuoteMode(JsonQuoteMode):
     description = "Display a random quote from The Office."
     data_file = "office.json"
     show_title = "The Office"
+    logo_file = "office_header.png"
     fallback_text = "That's what she said."

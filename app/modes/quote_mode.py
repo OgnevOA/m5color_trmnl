@@ -58,8 +58,10 @@ class JsonQuoteMode(Mode):
 
     #: Filename of the JSON collection (relative to the modes package).
     data_file: str = ""
-    #: Title shown on the card (footer).
+    #: Title shown on the card (header fallback if no logo).
     show_title: str = ""
+    #: Optional normalized header logo PNG in ``app/assets``.
+    logo_file: str = ""
     #: Shown when the collection is empty/unreadable.
     fallback_text: str = "No quotes available."
 
@@ -87,5 +89,6 @@ class JsonQuoteMode(Mode):
             season=quote.get("season"),
             episode=quote.get("episode"),
             episode_title=quote.get("episode_title"),
+            logo_file=self.logo_file or None,
         )
         return ContentItem(kind=ContentKind.html, title=self.show_title, html=html)

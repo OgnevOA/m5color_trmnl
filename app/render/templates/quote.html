@@ -8,16 +8,35 @@
         width: 380px;
         height: 580px;
         margin: 10px;
-        padding: 28px;
-        justify-content: space-between;
+        padding: 26px;
+        justify-content: flex-start;
         border: 2px solid #000000;
+      }
+      .logo-header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding-bottom: 16px;
+        margin-bottom: 6px;
+        border-bottom: 3px solid #000000;
+      }
+      .logo-header .logo {
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+      .logo-header .text-title {
+        font-size: 22px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #000000;
       }
       .card-body {
         flex: 1;
         display: flex;
         align-items: center;
         justify-content: center;
-        padding-bottom: 18px;
+        padding: 14px 0;
         overflow: hidden;
       }
       .quote-text {
@@ -69,14 +88,6 @@
         line-height: 1.35;
         max-width: 55%;
       }
-      .episode-info .show {
-        display: block;
-        font-weight: 700;
-        color: #000000;
-        text-transform: uppercase;
-        letter-spacing: 0.6px;
-        font-size: 12px;
-      }
       .episode-info .ep-title {
         display: block;
         color: #666666;
@@ -87,6 +98,13 @@
   </head>
   <body>
     <div class="page">
+      <div class="logo-header">
+        {% if logo_uri %}
+        <img class="logo" src="{{ logo_uri }}" width="{{ logo_w }}" height="{{ logo_h }}" alt="{{ show_title }}" />
+        {% else %}
+        <div class="text-title">{{ show_title }}</div>
+        {% endif %}
+      </div>
       <div class="card-body">
         {% if single %}
         <p class="quote-text">&ldquo;{{ text }}&rdquo;</p>
@@ -102,9 +120,8 @@
         {% endif %}
       </div>
       <div class="footer">
-        <span class="speaker">{% if speaker %}&mdash; {{ speaker }}{% else %}{{ show_title }}{% endif %}</span>
+        <span class="speaker">{% if speaker %}&mdash; {{ speaker }}{% endif %}</span>
         <span class="episode-info">
-          {% if single %}<span class="show">{{ show_title }}</span>{% endif %}
           {% if ep_code %}<span class="ep-code">{{ ep_code }}</span>{% endif %}
           {% if episode_title %}<span class="ep-title">{{ episode_title }}</span>{% endif %}
         </span>
