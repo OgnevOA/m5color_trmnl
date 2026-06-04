@@ -140,6 +140,39 @@ async def mark_failed(db: Database, queue_item_id: int, error: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Image carousel (image mode)
+# --------------------------------------------------------------------------- #
+async def reset_image_carousel(db: Database, device_id: str) -> int:
+    """Retire the current image-mode set so a new batch can replace it."""
+    rows = await db.fetchall(
+        """SELECT id FROM queue_items
+           WHERE device_id = ? AND mode_name = 'image'
+             AND status IN ('pending','ready','displayed')""",
+        (device_id,),
+    )
+    await db.execute(
+        """UPDATE queue_items SET status = 'skipped'
+           WHERE device_id = ? AND mode_name = 'image'
+             AND status IN ('pending','ready','displayed')""",
+        (device_id,),
+    )
+    return len(rows)
+
+
+async def carousel_images(db: Database, device_id: str) -> list[RenderedImage]:
+    """Ordered rendered images of the current image-mode carousel."""
+    rows = await db.fetchall(
+        """SELECT r.* FROM rendered_images r
+           JOIN queue_items q ON q.id = r.queue_item_id
+           WHERE r.device_id = ? AND q.mode_name = 'image'
+             AND q.status IN ('ready','displayed')
+           ORDER BY r.seq ASC""",
+        (device_id,),
+    )
+    return [_row_to_rendered(row) for row in rows]
+
+
+# --------------------------------------------------------------------------- #
 # Device-facing helpers
 # --------------------------------------------------------------------------- #
 async def next_ready_image(db: Database, device_id: str) -> Optional[RenderedImage]:

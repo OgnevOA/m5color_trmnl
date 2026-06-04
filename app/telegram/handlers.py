@@ -376,8 +376,15 @@ def build_router(services: Services) -> Router:
     async def on_photo(message: Message, bot: Bot) -> None:
         photo = message.photo[-1]
         data = await _download(bot, photo.file_id)
-        await services.enqueue_user_image(data, suffix=".jpg")
-        await message.answer("Switched to image mode. Image queued for rendering.")
+        _, started_new = await services.enqueue_user_image(
+            data, suffix=".jpg", media_group_id=message.media_group_id
+        )
+        # Only reply once per album (on the photo that starts the carousel).
+        if started_new:
+            await message.answer(
+                "Switched to image mode. Send several photos in one message "
+                "to carousel them; they'll cycle until you send something new."
+            )
 
     @router.message(F.document)
     async def on_document(message: Message, bot: Bot) -> None:
@@ -386,8 +393,11 @@ def build_router(services: Services) -> Router:
             await message.answer("Please send an image.")
             return
         data = await _download(bot, doc.file_id)
-        await services.enqueue_user_image(data, suffix=".png")
-        await message.answer("Switched to image mode. Image queued for rendering.")
+        _, started_new = await services.enqueue_user_image(
+            data, suffix=".png", media_group_id=message.media_group_id
+        )
+        if started_new:
+            await message.answer("Switched to image mode. Image queued for rendering.")
 
     @router.message(F.text)
     async def on_text(message: Message) -> None:

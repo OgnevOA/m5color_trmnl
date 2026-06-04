@@ -56,6 +56,11 @@ class Services:
         self._uploads_dir = Path(settings.data_dir) / "uploads"
         # Keep strong references to fire-and-forget background tasks.
         self._bg_tasks: Set[asyncio.Task] = set()
+        # Image-carousel batching: photos sharing a Telegram media_group_id (an
+        # album) accumulate into one carousel; a new group/single image replaces
+        # it. The lock serializes concurrent album-photo updates.
+        self._carousel_group: Optional[str] = None
+        self._carousel_lock = asyncio.Lock()
 
     def attach_worker(self, worker: PreRenderWorker) -> None:
         self.worker = worker
@@ -232,7 +237,11 @@ class Services:
                 message="Night mode: sleeping until morning.",
             )
 
-        # 3) Serve a pre-rendered image if one is ready.
+        # 3) Image mode: cycle through the current carousel, one per wake.
+        if cfg.mode == "image":
+            return await self._handle_image_carousel(req, plan)
+
+        # 4) Serve a pre-rendered image if one is ready.
         ready = await queue_service.next_ready_image(self.db, self.settings.device_id)
         if ready is not None:
             await queue_service.mark_displayed(
@@ -248,11 +257,47 @@ class Services:
                 next_wake_seconds=plan.next_wake_seconds,
             )
 
-        # 4) Nothing new: keep current content (never render synchronously).
+        # 5) Nothing new: keep current content (never render synchronously).
         # For periodic modes, also try to refill so the next wake has content.
         self._schedule_periodic_refill(cfg.mode)
         return ActionResponse(
             action=DeviceAction.noop,
+            next_wake_seconds=plan.next_wake_seconds,
+        )
+
+    async def _handle_image_carousel(self, req: StatusRequest, plan) -> ActionResponse:
+        """Advance the image carousel by one each wake, wrapping indefinitely.
+
+        Cursor is stateless: the next image is the one after whatever the device
+        currently shows (``req.last_image_id``). A single-image carousel is held
+        (noop) once shown, so the e-paper is not needlessly refreshed.
+        """
+        images = await queue_service.carousel_images(self.db, self.settings.device_id)
+        if not images:
+            return ActionResponse(
+                action=DeviceAction.noop, next_wake_seconds=plan.next_wake_seconds
+            )
+
+        ids = [img.image_id for img in images]
+        if req.last_image_id in ids:
+            nxt = (ids.index(req.last_image_id) + 1) % len(ids)
+        else:
+            nxt = 0
+        chosen = images[nxt]
+
+        # Single image already on screen -> hold (avoid a pointless refresh).
+        if chosen.image_id == req.last_image_id:
+            return ActionResponse(
+                action=DeviceAction.noop, next_wake_seconds=plan.next_wake_seconds
+            )
+
+        await queue_service.mark_displayed(
+            self.db, self.settings.device_id, chosen.image_id
+        )
+        return ActionResponse(
+            action=DeviceAction.draw,
+            image_id=chosen.image_id,
+            image_url=self._image_url(chosen.image_id),
             next_wake_seconds=plan.next_wake_seconds,
         )
 
@@ -336,17 +381,39 @@ class Services:
         self._notify_worker()
         return item_id
 
-    async def enqueue_user_image(self, data: bytes, suffix: str = ".jpg") -> int:
-        await self._switch_to_static_mode("image")
-        self._uploads_dir.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
-        path = self._uploads_dir / f"upload_{ts}{suffix}"
-        path.write_bytes(data)
-        item_id = await queue_service.add_image_item(
-            self.db, self.settings.device_id, source_path=str(path), title="Image"
-        )
+    async def enqueue_user_image(
+        self,
+        data: bytes,
+        suffix: str = ".jpg",
+        media_group_id: Optional[str] = None,
+    ) -> tuple[int, bool]:
+        """Queue a user image into the image-mode carousel.
+
+        Photos of the same Telegram album (``media_group_id``) accumulate into a
+        single carousel; a new album or a standalone image replaces the previous
+        set. Returns ``(item_id, started_new_carousel)``.
+        """
+        async with self._carousel_lock:
+            await self._switch_to_static_mode("image")
+            started_new = media_group_id is None or media_group_id != self._carousel_group
+            if started_new:
+                await queue_service.reset_image_carousel(
+                    self.db, self.settings.device_id
+                )
+                self._carousel_group = media_group_id
+            self._uploads_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+            path = self._uploads_dir / f"upload_{ts}{suffix}"
+            path.write_bytes(data)
+            item_id = await queue_service.add_image_item(
+                self.db,
+                self.settings.device_id,
+                source_path=str(path),
+                title="Image",
+                mode_name="image",
+            )
         self._notify_worker()
-        return item_id
+        return item_id, started_new
 
     async def generate_for_active_mode(self, force: bool = False) -> Optional[int]:
         """Generate the next item for the active mode.
