@@ -10,6 +10,7 @@ from .base import ContentItem, ContentKind, Mode, ModeContext
 class PlaceholderUnknownMode(Mode):
     name = "placeholder_unknown_mode"
     description = "Placeholder shown when the selected mode is unknown."
+    periodic = False
 
     def __init__(self, requested: str | None = None) -> None:
         self._requested = requested

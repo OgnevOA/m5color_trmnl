@@ -6,10 +6,11 @@ agreement and avoids duplicating queue/schedule/state handling.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Set
 
 import httpx
 
@@ -53,6 +54,8 @@ class Services:
         self.http = http
         self.worker = worker
         self._uploads_dir = Path(settings.data_dir) / "uploads"
+        # Keep strong references to fire-and-forget background tasks.
+        self._bg_tasks: Set[asyncio.Task] = set()
 
     def attach_worker(self, worker: PreRenderWorker) -> None:
         self.worker = worker
@@ -117,20 +120,53 @@ class Services:
         return known
 
     async def select_mode(self, name: str) -> tuple[bool, Optional[int]]:
-        """Set the mode and, for content-generating modes, immediately enqueue
-        a first item so something renders without a separate ``/next``.
+        """Switch the active mode.
+
+        Changing modes overrides (clears) the existing queue. Then:
+          * periodic modes (friends, xkcd) immediately generate a first item so
+            something renders without a separate ``/next``;
+          * static modes (plain_text, image) wait for user-supplied content and
+            keep the current display until changed manually.
 
         Returns ``(known, queued_item_id)``; ``queued_item_id`` is ``None`` for
-        input modes (plain_text / image) that wait for user content.
+        static modes.
         """
         known = await self.set_mode(name)
         if not known:
             return False, None
+        # A mode change overrides whatever was queued under the previous mode.
+        await self.clear_queue()
         mode = get_mode(name)
-        if getattr(mode, "generates_content", True):
+        if getattr(mode, "periodic", True):
             item_id = await self.generate_for_active_mode(force=True)
             return True, item_id
         return True, None
+
+    def _is_periodic(self, mode_name: str) -> bool:
+        return bool(getattr(get_mode(mode_name), "periodic", True))
+
+    def _schedule_periodic_refill(self, mode_name: str) -> None:
+        """Fire-and-forget: for periodic modes, ensure the next item is queued.
+
+        Done in the background so the device status request returns immediately
+        (no network/generation latency on the device wake path, and never any
+        synchronous rendering).
+        """
+        if not self._is_periodic(mode_name):
+            return
+        try:
+            task = asyncio.create_task(self._refill_safe())
+        except RuntimeError:
+            # No running event loop (e.g. unit tests) -- skip silently.
+            return
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
+    async def _refill_safe(self) -> None:
+        try:
+            await self.generate_for_active_mode(force=False)
+        except Exception:
+            logger.exception("periodic refill failed")
 
     async def set_night_mode(self, enabled: bool) -> None:
         await self.db.execute(
@@ -202,6 +238,9 @@ class Services:
             await queue_service.mark_displayed(
                 self.db, self.settings.device_id, ready.image_id
             )
+            # Periodic modes show fresh content each wake: pre-render the next
+            # item in the background so it is ready for the next wake.
+            self._schedule_periodic_refill(cfg.mode)
             return ActionResponse(
                 action=DeviceAction.draw,
                 image_id=ready.image_id,
@@ -210,6 +249,8 @@ class Services:
             )
 
         # 4) Nothing new: keep current content (never render synchronously).
+        # For periodic modes, also try to refill so the next wake has content.
+        self._schedule_periodic_refill(cfg.mode)
         return ActionResponse(
             action=DeviceAction.noop,
             next_wake_seconds=plan.next_wake_seconds,

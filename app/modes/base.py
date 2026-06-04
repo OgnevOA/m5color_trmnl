@@ -44,9 +44,12 @@ class Mode(abc.ABC):
 
     name: str = "base"
     description: str = ""
-    #: Whether the mode produces content on demand (``/next``) vs. waiting for
-    #: user-supplied input (plain_text, image).
-    generates_content: bool = True
+    #: Mode category:
+    #:   * periodic=True  -> the mode auto-generates fresh content (a new quote
+    #:     or comic) on each wake (e.g. random_friends_quote, random_xkcd).
+    #:   * periodic=False -> "static" mode: it shows user-supplied content and
+    #:     holds the display until changed manually (plain_text, image).
+    periodic: bool = True
 
     @abc.abstractmethod
     async def generate(self, ctx: ModeContext) -> Optional[ContentItem]:

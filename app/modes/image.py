@@ -10,7 +10,7 @@ from .base import ContentItem, ContentKind, Mode, ModeContext
 class ImageMode(Mode):
     name = "image"
     description = "Display images sent by the user."
-    generates_content = False
+    periodic = False
 
     async def generate(self, ctx: ModeContext) -> Optional[ContentItem]:
         return ContentItem(
