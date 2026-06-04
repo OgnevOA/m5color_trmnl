@@ -10,12 +10,14 @@ from .base import Mode
 from .image import ImageMode
 from .placeholder_unknown import PlaceholderUnknownMode
 from .plain_text import PlainTextMode
+from .qr_code import QrCodeMode
 from .random_friends_quote import RandomFriendsQuoteMode
 from .random_xkcd import RandomXkcdMode
 
 _MODE_CLASSES: dict[str, type[Mode]] = {
     PlainTextMode.name: PlainTextMode,
     ImageMode.name: ImageMode,
+    QrCodeMode.name: QrCodeMode,
     RandomFriendsQuoteMode.name: RandomFriendsQuoteMode,
     RandomXkcdMode.name: RandomXkcdMode,
 }

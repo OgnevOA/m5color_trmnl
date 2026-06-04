@@ -320,6 +320,22 @@ class Services:
         self._notify_worker()
         return item_id
 
+    async def enqueue_qr(self, payload: str) -> int:
+        """Switch to the QR mode and queue a QR code encoding ``payload``."""
+        from .render.templates import render_qr_html
+
+        await self._switch_to_static_mode("qr")
+        html = render_qr_html(payload)
+        item_id = await queue_service.add_html_item(
+            self.db,
+            self.settings.device_id,
+            html=html,
+            title="QR Code",
+            mode_name="qr",
+        )
+        self._notify_worker()
+        return item_id
+
     async def enqueue_user_image(self, data: bytes, suffix: str = ".jpg") -> int:
         await self._switch_to_static_mode("image")
         self._uploads_dir.mkdir(parents=True, exist_ok=True)

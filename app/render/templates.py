@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import io
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
+import qrcode
+from qrcode.constants import ERROR_CORRECT_M
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -63,6 +67,42 @@ def _font_size_for(text_length: int) -> int:
     if text_length <= 380:
         return 17
     return 15
+
+
+def _qr_png_data_uri(data: str, target_px: int = 340) -> tuple[str, int]:
+    """Build a crisp black/white QR PNG and return ``(data_uri, size_px)``.
+
+    The QR is rendered at an integer pixels-per-module size so it stays sharp
+    after the Spectra-6 quantization (no gray edges that would dither into
+    noise). ``size_px`` is the natural pixel size; the template displays the
+    image 1:1 with ``image-rendering: pixelated`` to avoid any blur.
+    """
+    qr = qrcode.QRCode(error_correction=ERROR_CORRECT_M, border=3)
+    qr.add_data(data)
+    qr.make(fit=True)
+    total_modules = qr.modules_count + 2 * qr.border
+    qr.box_size = max(1, target_px // total_modules)
+    img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}", img.size[0]
+
+
+def render_qr_html(data: str, caption: str | None = None) -> str:
+    """Render a QR code page encoding ``data`` (text or URL)."""
+    uri, size_px = _qr_png_data_uri(data)
+    shown = caption if caption is not None else data
+    if len(shown) > 140:
+        shown = shown[:139] + "\u2026"
+    template = _env().get_template("qr.html")
+    return template.render(
+        base_css=_base_css(),
+        qr_uri=uri,
+        qr_size=size_px,
+        caption=shown,
+        footer_right=datetime.now().strftime("%Y-%m-%d %H:%M"),
+    )
 
 
 def render_friends_quote_html(

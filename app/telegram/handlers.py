@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 from typing import Any, Awaitable, Callable
 from zoneinfo import ZoneInfo
 
@@ -46,8 +47,13 @@ HELP_TEXT = (
     "/clear - clear pending queue entries\n"
     "/next - skip to / generate the next item\n"
     "/night on|off|status - control night mode\n\n"
-    "Send any text to display it. Send a photo to show it on the device."
+    "Send any text to display it. Send a photo to show it on the device.\n"
+    "Prefix a message with 'qr:' to render it as a QR code "
+    "(e.g. 'qr: https://example.com')."
 )
+
+#: Matches a leading 'qr:' prefix (case-insensitive) and captures the rest.
+QR_PREFIX = re.compile(r"^\s*qr\s*:\s*(.+)$", re.IGNORECASE | re.DOTALL)
 
 BOT_COMMANDS = [
     BotCommand(command="menu", description="Open the control panel"),
@@ -64,6 +70,7 @@ BOT_COMMANDS = [
 MODE_LABELS = {
     "plain_text": "Text",
     "image": "Image",
+    "qr": "QR",
     "random_friends_quote": "Friends",
     "random_xkcd": "XKCD",
 }
@@ -382,6 +389,15 @@ def build_router(services: Services) -> Router:
     async def on_text(message: Message) -> None:
         text = (message.text or "").strip()
         if not text:
+            return
+        qr_match = QR_PREFIX.match(text)
+        if qr_match:
+            payload = qr_match.group(1).strip()
+            if not payload:
+                await message.answer("Nothing to encode. Try 'qr: HELLO'.")
+                return
+            await services.enqueue_qr(payload)
+            await message.answer("Switched to QR mode. QR code queued for rendering.")
             return
         await services.enqueue_user_text(text)
         await message.answer("Switched to text mode. Text queued for rendering.")
