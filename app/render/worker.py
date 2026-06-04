@@ -15,11 +15,20 @@ from .. import queue_service
 from ..config import Settings
 from ..db import Database
 from ..models import QueueItem, QueueItemKind
+from ..modes.quote_mode import JsonQuoteMode
+from ..modes.registry import get_mode
 from . import image_ops
 from .browser import BrowserRenderer
 from .templates import render_text_html
 
 logger = logging.getLogger(__name__)
+
+
+def _is_quote_item(item: QueueItem) -> bool:
+    """True if the item was produced by a quote mode (Friends/Office/Scrubs/...)."""
+    if not item.mode_name:
+        return False
+    return isinstance(get_mode(item.mode_name), JsonQuoteMode)
 
 
 class PreRenderWorker:
@@ -127,5 +136,11 @@ class PreRenderWorker:
                 title=item.title or "Message",
             )
         screenshot = await self._renderer.render_html(html)
+        # Quote cards are pure black-on-white: dithering only adds speckle to
+        # anti-aliased text edges, so render them with a hard threshold. Other
+        # text (e.g. plain messages with emoji) keeps dithering for color.
+        dither = not _is_quote_item(item)
         # Screenshot is already 400x600; cover keeps it and applies palette.
-        return image_ops.png_bytes_to_display_png(screenshot, fit_mode="cover")
+        return image_ops.png_bytes_to_display_png(
+            screenshot, fit_mode="cover", dither=dither
+        )
