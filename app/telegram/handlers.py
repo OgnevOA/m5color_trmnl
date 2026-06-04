@@ -113,12 +113,18 @@ def build_router(services: Services) -> Router:
             )
             return
         name = parts[1].strip()
-        known = await services.set_mode(name)
-        if known:
-            await message.answer(f"Mode set to {name}.")
-        else:
+        known, item_id = await services.select_mode(name)
+        if not known:
             await message.answer(
                 f"Unknown mode '{name}'. Available: " + ", ".join(available_modes())
+            )
+        elif item_id is not None:
+            await message.answer(
+                f"Mode set to {name}. Generating the first item (rendering)..."
+            )
+        else:
+            await message.answer(
+                f"Mode set to {name}. Send content to display it."
             )
 
     @router.message(Command("queue"))

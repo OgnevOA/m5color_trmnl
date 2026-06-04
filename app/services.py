@@ -110,12 +110,27 @@ class Services:
     async def set_mode(self, name: str) -> bool:
         """Set the active mode. Returns True if the mode name is known."""
         known = is_known_mode(name)
-        stored = name if known else name  # store as requested for transparency
         await self.db.execute(
             "UPDATE settings SET mode = ? WHERE device_id = ?",
-            (stored, self.settings.device_id),
+            (name, self.settings.device_id),
         )
         return known
+
+    async def select_mode(self, name: str) -> tuple[bool, Optional[int]]:
+        """Set the mode and, for content-generating modes, immediately enqueue
+        a first item so something renders without a separate ``/next``.
+
+        Returns ``(known, queued_item_id)``; ``queued_item_id`` is ``None`` for
+        input modes (plain_text / image) that wait for user content.
+        """
+        known = await self.set_mode(name)
+        if not known:
+            return False, None
+        mode = get_mode(name)
+        if getattr(mode, "generates_content", True):
+            item_id = await self.generate_for_active_mode(force=True)
+            return True, item_id
+        return True, None
 
     async def set_night_mode(self, enabled: bool) -> None:
         await self.db.execute(
@@ -261,13 +276,22 @@ class Services:
         self._notify_worker()
         return item_id
 
-    async def generate_for_active_mode(self) -> Optional[int]:
-        """Generate the next item for the active mode (used by ``/next``)."""
-        # If a next item is already queued/ready, there is nothing to generate.
-        pending = await queue_service.count_pending(self.db, self.settings.device_id)
-        ready = await queue_service.count_ready(self.db, self.settings.device_id)
-        if pending + ready > 0:
-            return None
+    async def generate_for_active_mode(self, force: bool = False) -> Optional[int]:
+        """Generate the next item for the active mode.
+
+        With ``force=False`` (``/next``), generation is skipped when an item is
+        already queued/ready. With ``force=True`` (e.g. on mode change) an item
+        is always generated.
+        """
+        if not force:
+            pending = await queue_service.count_pending(
+                self.db, self.settings.device_id
+            )
+            ready = await queue_service.count_ready(
+                self.db, self.settings.device_id
+            )
+            if pending + ready > 0:
+                return None
 
         cfg = await self.get_device_settings()
         mode = get_mode(cfg.mode)
