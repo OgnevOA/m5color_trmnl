@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      {{ base_css | safe }}
+      .page {
+        width: 380px;
+        height: 580px;
+        margin: 10px;
+        padding: 28px;
+        justify-content: space-between;
+        border: 2px solid #000000;
+      }
+      .card-body {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding-bottom: 18px;
+        overflow: hidden;
+      }
+      .quote-text {
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: {{ font_px }}px;
+        font-style: italic;
+        line-height: 1.4;
+        text-align: center;
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      .dialogue {
+        width: 100%;
+        text-align: left;
+      }
+      .quote-line {
+        margin-bottom: 14px;
+      }
+      .inline-speaker {
+        display: block;
+        font-size: 13px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        margin-bottom: 3px;
+      }
+      .inline-text {
+        font-family: Georgia, "Times New Roman", serif;
+        font-style: italic;
+        font-size: {{ font_px }}px;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+      }
+      .footer {
+        color: #000000;
+        font-size: 16px;
+        align-items: flex-end;
+      }
+      .speaker {
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        max-width: 60%;
+        overflow-wrap: anywhere;
+      }
+      .episode-info {
+        text-align: right;
+        color: #444444;
+        font-size: 14px;
+        line-height: 1.35;
+        max-width: 55%;
+      }
+      .episode-info .show {
+        display: block;
+        font-weight: 700;
+        color: #000000;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        font-size: 12px;
+      }
+      .episode-info .ep-title {
+        display: block;
+        color: #666666;
+        font-size: 13px;
+        font-style: italic;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="card-body">
+        {% if single %}
+        <p class="quote-text">&ldquo;{{ text }}&rdquo;</p>
+        {% else %}
+        <div class="dialogue">
+          {% for d in dialogue %}
+          <div class="quote-line">
+            {% if d.speaker %}<span class="inline-speaker">{{ d.speaker }}</span>{% endif %}
+            <span class="inline-text">{{ d.text }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      <div class="footer">
+        <span class="speaker">{% if speaker %}&mdash; {{ speaker }}{% else %}{{ show_title }}{% endif %}</span>
+        <span class="episode-info">
+          {% if single %}<span class="show">{{ show_title }}</span>{% endif %}
+          {% if ep_code %}<span class="ep-code">{{ ep_code }}</span>{% endif %}
+          {% if episode_title %}<span class="ep-title">{{ episode_title }}</span>{% endif %}
+        </span>
+      </div>
+    </div>
+  </body>
+</html>

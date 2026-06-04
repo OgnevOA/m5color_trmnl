@@ -72,6 +72,8 @@ MODE_LABELS = {
     "image": "Image",
     "qr": "QR",
     "random_friends_quote": "Friends",
+    "random_office_quote": "The Office",
+    "random_scrubs_quote": "Scrubs",
     "random_xkcd": "XKCD",
 }
 
@@ -97,11 +99,13 @@ def main_menu() -> InlineKeyboardMarkup:
 
 
 def modes_menu(current: str) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
+    buttons: list[InlineKeyboardButton] = []
     for name in available_modes():
         label = MODE_LABELS.get(name, name)
         mark = "\u2705 " if name == current else ""
-        rows.append([_btn(f"{mark}{label}", f"mode:{name}")])
+        buttons.append(_btn(f"{mark}{label}", f"mode:{name}"))
+    # Two buttons per row for a compact grid.
+    rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     rows.append([_btn("\u2190 Back", "home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

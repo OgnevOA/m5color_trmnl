@@ -1,0 +1,192 @@
+{
+  "quotes": [
+    {
+      "id": 1,
+      "dialogue": [
+        {
+          "speaker": "Dr. Cox",
+          "text": "People aren't chocolates. D'you know what they are mostly? Bastards. Bastard-coated bastards with bastard filling."
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "dialogue": [
+        {
+          "speaker": "Dr. Cox",
+          "text": "The simple fact that you actually seem to give a crap is the reason I took an interest in you to begin with. It's why I trust you as a doctor. Hell, it's why I trust you as a person."
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "dialogue": [
+        {
+          "speaker": "Dr. Kelso",
+          "text": "Ah, nothing in this world that's worth having comes easy."
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "dialogue": [
+        {
+          "speaker": "Dr. Cox",
+          "text": "Every one of our parents does considerable emotional damage, and from what I've heard, it just might be the best part of being a parent."
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "dialogue": [
+        {
+          "speaker": "Turk",
+          "text": "It sounds like you're asking me out on a man date."
+        },
+        {
+          "speaker": "J.D.",
+          "text": "Turk, why are you so afraid of loving me?"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "dialogue": [
+        {
+          "speaker": "Dr. Cox",
+          "text": "Ladies and gentlemen, allow me to present: Man Not Caring."
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "dialogue": [
+        {
+          "speaker": "J.D.",
+          "text": "You're a very strange man, aren't you?"
+        },
+        {
+          "speaker": "J.D.",
+          "text": "I was a preemie."
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "dialogue": [
+        {
+          "speaker": "The Todd",
+          "text": "Appletini! Appletini, please!"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "dialogue": [
+        {
+          "speaker": "Elliot Reid",
+          "text": "Frick, frick, frickedy frick!"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "dialogue": [
+        {
+          "speaker": "Dr. Cox",
+          "text": "I have absolutely no idea what you're talking about, and I'm sure I never will, so why don't you go ahead and do whatever the hell it is you do, Newbie."
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "dialogue": [
+        {
+          "speaker": "J.D.",
+          "text": "It's funny how, no matter what, you always end up needing the people you pushed away."
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "dialogue": [
+        {
+          "speaker": "The Janitor",
+          "text": "I've been here seven years. You've been here, what, a day? You do the math."
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "dialogue": [
+        {
+          "speaker": "Dr. Cox",
+          "text": "Newbie, my drunk baby."
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "dialogue": [
+        {
+          "speaker": "Turk",
+          "text": "Helping or hurting, J.D.? Helping or hurting?"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "dialogue": [
+        {
+          "speaker": "J.D.",
+          "text": "No matter how much you care, some people just don't want to be saved."
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "dialogue": [
+        {
+          "speaker": "Dr. Cox",
+          "text": "There comes a time in every man's life when he's gotta stop thinking about himself and start thinking about somebody else."
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "dialogue": [
+        {
+          "speaker": "Carla Espinosa",
+          "text": "You can't keep blaming yourself. Just blame yourself once, then move on."
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "dialogue": [
+        {
+          "speaker": "J.D.",
+          "text": "Nothing in the world worth having comes without a little bit of fear."
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "dialogue": [
+        {
+          "speaker": "Dr. Cox",
+          "text": "I want you to be a doctor for the right reasons, Newbie. Not because somebody's making you do it, but because deep down, it's all you ever wanted to do."
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "dialogue": [
+        {
+          "speaker": "J.D.",
+          "text": "In the end, the questions that matter are pretty simple: Do you have any regrets? Are you happy?"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,244 @@
+{
+  "quotes": [
+    {
+      "id": 1,
+      "dialogue": [
+        {
+          "speaker": "Michael Scott",
+          "text": "I'm not superstitious, but I am a little stitious."
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "dialogue": [
+        {
+          "speaker": "Michael Scott",
+          "text": "Would I rather be feared or loved? Easy. Both. I want people to be afraid of how much they love me."
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "dialogue": [
+        {
+          "speaker": "Dwight Schrute",
+          "text": "Whenever I'm about to do something, I think, 'Would an idiot do that?' And if they would, I do not do that thing."
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "dialogue": [
+        {
+          "speaker": "Michael Scott",
+          "text": "Sometimes I'll start a sentence and I don't even know where it's going. I just hope I find it along the way."
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "dialogue": [
+        {
+          "speaker": "Dwight Schrute",
+          "text": "Identity theft is not a joke, Jim! Millions of families suffer every year!"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "dialogue": [
+        {
+          "speaker": "Kevin Malone",
+          "text": "Why waste time say lot word when few word do trick."
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "dialogue": [
+        {
+          "speaker": "Jim Halpert",
+          "text": "Fact: Bears eat beets. Bears. Beets. Battlestar Galactica."
+        },
+        {
+          "speaker": "Dwight Schrute",
+          "text": "Bears do not... what is going on? What are you doing?"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "dialogue": [
+        {
+          "speaker": "Pam Beesly",
+          "text": "I feel God in this Chili's tonight."
+        }
+      ],
+      "season": 2,
+      "episode": 1,
+      "episode_title": "The Dundies"
+    },
+    {
+      "id": 9,
+      "dialogue": [
+        {
+          "speaker": "Michael Scott",
+          "text": "I... DECLARE... BANKRUPTCY!"
+        }
+      ],
+      "season": 4,
+      "episode_title": "Money"
+    },
+    {
+      "id": 10,
+      "dialogue": [
+        {
+          "speaker": "Creed Bratton",
+          "text": "I've been involved in a number of cults, both as a leader and a follower. You have more fun as a follower, but you make more money as a leader."
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "dialogue": [
+        {
+          "speaker": "Michael Scott",
+          "text": "'You miss 100% of the shots you don't take.' - Wayne Gretzky"
+        },
+        {
+          "speaker": "Michael Scott",
+          "text": "- Michael Scott"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "dialogue": [
+        {
+          "speaker": "Andy Bernard",
+          "text": "I wish there was a way to know you're in the good old days before you've actually left them."
+        }
+      ],
+      "season": 9,
+      "episode": 23,
+      "episode_title": "Finale"
+    },
+    {
+      "id": 13,
+      "dialogue": [
+        {
+          "speaker": "Michael Scott",
+          "text": "Do I need to be liked? Absolutely not. I like to be liked. I enjoy being liked. I have to be liked. But it's not like this compulsive need to be liked, like my need to be praised."
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "dialogue": [
+        {
+          "speaker": "Dwight Schrute",
+          "text": "I am fast. To give you a reference point, I am somewhere between a snake and a mongoose. And a panther."
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "dialogue": [
+        {
+          "speaker": "Michael Scott",
+          "text": "I am Beyonce, always."
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "dialogue": [
+        {
+          "speaker": "Jim Halpert",
+          "text": "Whenever Michael has a meeting, you know it's gonna be one of two things: a complete waste of time, or 'Lord of the Flies.'"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "dialogue": [
+        {
+          "speaker": "Michael Scott",
+          "text": "I knew exactly what to do. But in a much more real sense, I had no idea what to do."
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "dialogue": [
+        {
+          "speaker": "Dwight Schrute",
+          "text": "Through concentration, I can raise and lower my cholesterol at will."
+        },
+        {
+          "speaker": "Pam Beesly",
+          "text": "Why would you want to RAISE your cholesterol?"
+        },
+        {
+          "speaker": "Dwight Schrute",
+          "text": "So I can lower it."
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "dialogue": [
+        {
+          "speaker": "Michael Scott",
+          "text": "I'm an early bird and a night owl. So I'm wise and I have huge breasts."
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "dialogue": [
+        {
+          "speaker": "Stanley Hudson",
+          "text": "I do not like being forced to mingle. The phrase 'mandatory fun' makes me sick to my stomach."
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "dialogue": [
+        {
+          "speaker": "Michael Scott",
+          "text": "And I knew that I had to protect my workers, who are a family to me, with the exception of Toby."
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "dialogue": [
+        {
+          "speaker": "Dwight Schrute",
+          "text": "Not everything is a lesson, Ryan. Sometimes you just fail."
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "dialogue": [
+        {
+          "speaker": "Michael Scott",
+          "text": "Society teaches us that having feelings and crying is bad and wrong. Well, that's baloney, because grief isn't wrong."
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "dialogue": [
+        {
+          "speaker": "Kelly Kapoor",
+          "text": "I talk a lot, so I've learned to just tune myself out."
+        }
+      ]
+    }
+  ]
+}

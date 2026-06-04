@@ -57,16 +57,29 @@ def render_placeholder_html(title: str, body: str) -> str:
 
 
 def _font_size_for(text_length: int) -> int:
-    """Pick a font size so longer quotes still fit the 400x600 panel."""
+    """Pick a font size for a multi-line dialogue so it fits the 400x600 panel."""
     if text_length <= 80:
-        return 30
+        return 28
     if text_length <= 160:
-        return 24
+        return 23
     if text_length <= 260:
-        return 20
+        return 19
     if text_length <= 380:
-        return 17
-    return 15
+        return 16
+    return 14
+
+
+def _single_quote_font_size(text_length: int) -> int:
+    """Larger sizes for a single centered quote (serif, italic)."""
+    if text_length <= 60:
+        return 34
+    if text_length <= 120:
+        return 28
+    if text_length <= 200:
+        return 23
+    if text_length <= 320:
+        return 19
+    return 16
 
 
 def _qr_png_data_uri(data: str, target_px: int = 340) -> tuple[str, int]:
@@ -105,19 +118,41 @@ def render_qr_html(data: str, caption: str | None = None) -> str:
     )
 
 
-def render_friends_quote_html(
+def render_quote_card_html(
+    show_title: str,
     dialogue: list[dict],
-    attribution: str = "",
+    season: int | None = None,
+    episode: int | None = None,
+    episode_title: str | None = None,
 ) -> str:
-    """Render a Friends quote card.
+    """Render a TV-show quote card (serif italic quote, black on white).
 
-    ``dialogue`` is a list of ``{"speaker": str, "text": str}`` items.
+    ``dialogue`` is a list of ``{"speaker": str, "text": str}`` items. A single
+    line renders as one big centered quote with the speaker in the footer; a
+    multi-line exchange renders each line with an inline speaker label.
     """
+    single = len(dialogue) == 1
     total = sum(len(str(d.get("text", ""))) for d in dialogue)
-    template = _env().get_template("friends.html")
+    speaker = str(dialogue[0].get("speaker", "")).strip() if single else ""
+    text = str(dialogue[0].get("text", "")).strip() if single else ""
+
+    if season and episode:
+        ep_code = f"S{season} \u00b7 E{episode}"
+    elif season:
+        ep_code = f"Season {season}"
+    else:
+        ep_code = ""
+
+    font_px = _single_quote_font_size(total) if single else _font_size_for(total)
+    template = _env().get_template("quote.html")
     return template.render(
         base_css=_base_css(),
+        show_title=show_title,
         dialogue=dialogue,
-        attribution=attribution,
-        font_px=_font_size_for(total),
+        single=single,
+        speaker=speaker,
+        text=text,
+        ep_code=ep_code,
+        episode_title=episode_title or "",
+        font_px=font_px,
     )

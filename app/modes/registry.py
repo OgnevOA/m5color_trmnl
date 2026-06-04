@@ -12,6 +12,8 @@ from .placeholder_unknown import PlaceholderUnknownMode
 from .plain_text import PlainTextMode
 from .qr_code import QrCodeMode
 from .random_friends_quote import RandomFriendsQuoteMode
+from .random_office_quote import RandomOfficeQuoteMode
+from .random_scrubs_quote import RandomScrubsQuoteMode
 from .random_xkcd import RandomXkcdMode
 
 _MODE_CLASSES: dict[str, type[Mode]] = {
@@ -19,6 +21,8 @@ _MODE_CLASSES: dict[str, type[Mode]] = {
     ImageMode.name: ImageMode,
     QrCodeMode.name: QrCodeMode,
     RandomFriendsQuoteMode.name: RandomFriendsQuoteMode,
+    RandomOfficeQuoteMode.name: RandomOfficeQuoteMode,
+    RandomScrubsQuoteMode.name: RandomScrubsQuoteMode,
     RandomXkcdMode.name: RandomXkcdMode,
 }
 
