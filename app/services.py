@@ -299,7 +299,21 @@ class Services:
     # ------------------------------------------------------------------ #
     # Content input
     # ------------------------------------------------------------------ #
+    async def _switch_to_static_mode(self, target: str) -> None:
+        """Switch to a static mode for user-supplied content.
+
+        Sending content implicitly selects the matching static mode. If we are
+        coming from a different mode (e.g. a periodic one like
+        ``random_friends_quote``), clear the queue first so stale auto-generated
+        items don't compete with what the user just sent.
+        """
+        cfg = await self.get_device_settings()
+        if cfg.mode != target:
+            await self.clear_queue()
+            await self.set_mode(target)
+
     async def enqueue_user_text(self, text: str) -> int:
+        await self._switch_to_static_mode("plain_text")
         item_id = await queue_service.add_text_item(
             self.db, self.settings.device_id, text=text, title="Message"
         )
@@ -307,6 +321,7 @@ class Services:
         return item_id
 
     async def enqueue_user_image(self, data: bytes, suffix: str = ".jpg") -> int:
+        await self._switch_to_static_mode("image")
         self._uploads_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
         path = self._uploads_dir / f"upload_{ts}{suffix}"

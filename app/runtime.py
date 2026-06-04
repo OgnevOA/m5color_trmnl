@@ -24,7 +24,7 @@ from .db import Database
 from .render.browser import BrowserRenderer
 from .render.worker import PreRenderWorker
 from .services import Services
-from .telegram.handlers import build_dispatcher
+from .telegram.handlers import build_dispatcher, setup_bot_commands
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,8 @@ async def startup(
         dispatcher = build_dispatcher(services)
         ctx.bot = bot
         ctx.dispatcher = dispatcher
+        with contextlib.suppress(Exception):
+            await setup_bot_commands(bot)
         ctx.bot_task = asyncio.create_task(
             dispatcher.start_polling(bot, handle_signals=False),
             name="telegram-polling",

@@ -18,6 +18,7 @@ from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
+    BotCommand,
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -46,6 +47,18 @@ HELP_TEXT = (
     "/night on|off|status - control night mode\n\n"
     "Send any text to display it. Send a photo to show it on the device."
 )
+
+BOT_COMMANDS = [
+    BotCommand(command="menu", description="Open the control panel"),
+    BotCommand(command="status", description="Show system status"),
+    BotCommand(command="mode", description="Set the active mode"),
+    BotCommand(command="interval", description="Set polling interval (minutes)"),
+    BotCommand(command="next", description="Generate / skip to the next item"),
+    BotCommand(command="queue", description="Show queue status"),
+    BotCommand(command="clear", description="Clear the pending queue"),
+    BotCommand(command="night", description="Control night mode"),
+    BotCommand(command="help", description="Show help"),
+]
 
 MODE_LABELS = {
     "plain_text": "Text",
@@ -348,7 +361,7 @@ def build_router(services: Services) -> Router:
         photo = message.photo[-1]
         data = await _download(bot, photo.file_id)
         await services.enqueue_user_image(data, suffix=".jpg")
-        await message.answer("Image queued for rendering.")
+        await message.answer("Switched to image mode. Image queued for rendering.")
 
     @router.message(F.document)
     async def on_document(message: Message, bot: Bot) -> None:
@@ -358,7 +371,7 @@ def build_router(services: Services) -> Router:
             return
         data = await _download(bot, doc.file_id)
         await services.enqueue_user_image(data, suffix=".png")
-        await message.answer("Image queued for rendering.")
+        await message.answer("Switched to image mode. Image queued for rendering.")
 
     @router.message(F.text)
     async def on_text(message: Message) -> None:
@@ -366,7 +379,7 @@ def build_router(services: Services) -> Router:
         if not text:
             return
         await services.enqueue_user_text(text)
-        await message.answer("Text queued for rendering.")
+        await message.answer("Switched to text mode. Text queued for rendering.")
 
     return router
 
@@ -376,6 +389,15 @@ async def _download(bot: Bot, file_id: str) -> bytes:
     buf = io.BytesIO()
     await bot.download_file(file.file_path, buf)
     return buf.getvalue()
+
+
+async def setup_bot_commands(bot: Bot) -> None:
+    """Replace the bot's command menu (the blue '/' button in Telegram).
+
+    This overwrites whatever was previously registered via setMyCommands,
+    including stale commands from older bot versions.
+    """
+    await bot.set_my_commands(BOT_COMMANDS)
 
 
 def build_dispatcher(services: Services) -> Dispatcher:
