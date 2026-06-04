@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 import logging
 from typing import Any, Awaitable, Callable
+from zoneinfo import ZoneInfo
 
 from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -126,7 +127,11 @@ def night_menu(enabled: bool) -> InlineKeyboardMarkup:
 # --------------------------------------------------------------------------- #
 async def status_text(services: Services) -> str:
     s = await services.get_status_snapshot()
-    last_seen = s.last_seen.strftime("%Y-%m-%d %H:%M:%S") if s.last_seen else "never"
+    if s.last_seen is not None:
+        tz = ZoneInfo(services.settings.timezone)
+        last_seen = s.last_seen.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S %Z")
+    else:
+        last_seen = "never"
     battery = f"{s.battery_percent:.0f}%" if s.battery_percent is not None else "?"
     return (
         "System status\n"
