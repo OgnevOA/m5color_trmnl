@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time as _time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Set
 
 import httpx
 
-from . import queue_service
+from . import home_assistant, queue_service
 from .config import Settings
 from .db import Database
 from .models import (
@@ -33,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 CRITICAL_BATTERY_PERCENT = 5.0
 CRITICAL_BATTERY_SLEEP_SECONDS = 6 * 3600
+
+#: Cache the Home Assistant presence result briefly so repeated wakes don't
+#: re-hit HA and the device status path stays fast.
+PRESENCE_CACHE_TTL_SECONDS = 60.0
 
 
 def _now_iso() -> str:
@@ -61,6 +66,9 @@ class Services:
         # it. The lock serializes concurrent album-photo updates.
         self._carousel_group: Optional[str] = None
         self._carousel_lock = asyncio.Lock()
+        # Presence gate: (monotonic_expiry, value) where value is the cached
+        # anyone_home result (True/False/None).
+        self._presence_cache: Optional[tuple[float, Optional[bool]]] = None
 
     def attach_worker(self, worker: PreRenderWorker) -> None:
         self.worker = worker
@@ -250,6 +258,19 @@ class Services:
                 True,
             )
 
+        # 2b) Presence gate: nobody home -> hold the current image (no refresh).
+        # Returning here also skips the periodic refill, avoiding needless
+        # weather/XKCD/API calls while away.
+        if await self._presence_blocks_update():
+            return (
+                ActionResponse(
+                    action=DeviceAction.noop,
+                    next_wake_seconds=plan.next_wake_seconds,
+                    message="Nobody home: holding display.",
+                ),
+                False,
+            )
+
         # 3) Image mode: cycle through the current carousel, one per wake.
         if cfg.mode == "image":
             return await self._handle_image_carousel(req, plan), False
@@ -283,6 +304,21 @@ class Services:
             ),
             False,
         )
+
+    async def _presence_state(self) -> Optional[bool]:
+        """Cached Home Assistant presence (True home / False away / None unknown)."""
+        if not self.settings.presence_gating_configured:
+            return None
+        now = _time.monotonic()
+        if self._presence_cache is not None and now < self._presence_cache[0]:
+            return self._presence_cache[1]
+        value = await home_assistant.anyone_home(self.http, self.settings)
+        self._presence_cache = (now + PRESENCE_CACHE_TTL_SECONDS, value)
+        return value
+
+    async def _presence_blocks_update(self) -> bool:
+        """True only when presence is known and nobody is home (fail open)."""
+        return (await self._presence_state()) is False
 
     async def _record_stats(
         self,
@@ -424,6 +460,10 @@ class Services:
                 last_seen = datetime.fromisoformat(dev["last_seen"])
             except ValueError:
                 last_seen = None
+        presence = None
+        if self.settings.presence_gating_configured:
+            state = await self._presence_state()
+            presence = {True: "home", False: "away"}.get(state, "unknown")
         return StatusSnapshot(
             device_id=self.settings.device_id,
             mode=cfg.mode,
@@ -441,6 +481,7 @@ class Services:
             queue_ready=await queue_service.count_ready(
                 self.db, self.settings.device_id
             ),
+            presence=presence,
         )
 
     # ------------------------------------------------------------------ #

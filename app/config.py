@@ -77,6 +77,15 @@ class Settings(BaseSettings):
     weather_units: str = "metric"
     weather_lang: str = "en"
 
+    # Home Assistant presence gate. When configured, the device holds its current
+    # image (noop) while nobody is home. The gate is active purely based on
+    # configuration: if the URL or token (or entity list) is blank it is skipped
+    # entirely. It also fails open on any error so HA downtime never freezes the
+    # display. The token grants full control of your home -- keep it in .env only.
+    home_assistant_url: str = ""
+    home_assistant_token: str = ""
+    home_assistant_presence_entities: str = ""
+
     @field_validator("telegram_allowed_user_ids")
     @classmethod
     def _strip_user_ids(cls, value: str) -> str:
@@ -96,6 +105,21 @@ class Settings(BaseSettings):
             except ValueError:
                 continue
         return ids
+
+    @property
+    def presence_entities(self) -> list[str]:
+        """Parse the comma/space separated Home Assistant presence entities."""
+        raw = self.home_assistant_presence_entities.replace(",", " ")
+        return [token.strip() for token in raw.split() if token.strip()]
+
+    @property
+    def presence_gating_configured(self) -> bool:
+        """Whether the presence gate has everything it needs to run."""
+        return bool(
+            self.home_assistant_url
+            and self.home_assistant_token
+            and self.presence_entities
+        )
 
     @property
     def night_start_time(self) -> time:

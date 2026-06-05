@@ -125,3 +125,5 @@ class StatusSnapshot(BaseModel):
     battery_percent: Optional[float] = None
     queue_pending: int
     queue_ready: int
+    #: "home" / "away" / "unknown" when the presence gate is configured, else None.
+    presence: Optional[str] = None

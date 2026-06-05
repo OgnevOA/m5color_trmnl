@@ -163,6 +163,12 @@ async def status_text(services: Services) -> str:
         f"- Last image: {s.last_image_id or '-'}\n"
         f"- Battery: {battery}\n"
         f"- Queue: {s.queue_ready} ready / {s.queue_pending} pending"
+        + (
+            f"\n- Presence: {s.presence}"
+            + (" (holding)" if s.presence == "away" else "")
+            if s.presence is not None
+            else ""
+        )
     )
 
 
