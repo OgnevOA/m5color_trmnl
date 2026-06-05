@@ -77,6 +77,7 @@ MODE_LABELS = {
     "image": "Image",
     "qr": "QR",
     "weather": "Weather",
+    "now_playing": "Now Playing",
     "random_friends_quote": "Friends",
     "random_office_quote": "The Office",
     "random_scrubs_quote": "Scrubs",

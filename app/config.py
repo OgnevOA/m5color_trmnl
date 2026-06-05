@@ -98,6 +98,9 @@ class Settings(BaseSettings):
     home_assistant_url: str = ""
     home_assistant_token: str = ""
     home_assistant_presence_entities: str = ""
+    # "Now Playing" mode: a media_player entity whose artwork is shown as a
+    # full-screen poster (e.g. media_player.gostinaia). Reuses the HA url/token.
+    home_assistant_media_player_entity: str = ""
 
     @field_validator("telegram_allowed_user_ids")
     @classmethod
@@ -132,6 +135,15 @@ class Settings(BaseSettings):
             self.home_assistant_url
             and self.home_assistant_token
             and self.presence_entities
+        )
+
+    @property
+    def now_playing_configured(self) -> bool:
+        """Whether the Now Playing mode has everything it needs to run."""
+        return bool(
+            self.home_assistant_url
+            and self.home_assistant_token
+            and self.home_assistant_media_player_entity
         )
 
     @property

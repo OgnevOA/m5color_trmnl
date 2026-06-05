@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from .base import Mode
 from .image import ImageMode
+from .now_playing import NowPlayingMode
 from .placeholder_unknown import PlaceholderUnknownMode
 from .plain_text import PlainTextMode
 from .qr_code import QrCodeMode
@@ -22,6 +23,7 @@ _MODE_CLASSES: dict[str, type[Mode]] = {
     ImageMode.name: ImageMode,
     QrCodeMode.name: QrCodeMode,
     WeatherMode.name: WeatherMode,
+    NowPlayingMode.name: NowPlayingMode,
     RandomFriendsQuoteMode.name: RandomFriendsQuoteMode,
     RandomOfficeQuoteMode.name: RandomOfficeQuoteMode,
     RandomScrubsQuoteMode.name: RandomScrubsQuoteMode,
