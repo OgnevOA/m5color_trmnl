@@ -16,14 +16,17 @@ TARGET_WIDTH = 400
 TARGET_HEIGHT = 600
 TARGET_SIZE = (TARGET_WIDTH, TARGET_HEIGHT)
 
-# Spectra 6 style limited color palette: black, white, red, yellow, blue, green.
+# Spectra 6 limited color palette: black, white, red, yellow, blue, green.
+# Values are tuned a bit lighter/closer to the panel's actual ink colors so
+# midtones map to lighter inks (the previous darker primaries made photos look
+# muddy when neutral midtones snapped to dark green/blue).
 SPECTRA6_PALETTE: list[tuple[int, int, int]] = [
     (0, 0, 0),        # black
     (255, 255, 255),  # white
-    (220, 30, 30),    # red
-    (240, 200, 40),   # yellow
-    (40, 80, 200),    # blue
-    (40, 160, 80),    # green
+    (228, 64, 60),    # red
+    (246, 218, 72),   # yellow
+    (66, 110, 214),   # blue
+    (78, 180, 116),   # green
 ]
 
 FitMode = Literal["cover", "contain"]
@@ -87,6 +90,25 @@ def fit_to_target(
     return canvas
 
 
+def enhance_for_eink(
+    img: Image.Image, gamma: float = 0.75, autocontrast: bool = True
+) -> Image.Image:
+    """Pre-lighten a photo so it doesn't read dark on the Spectra-6 palette.
+
+    The palette has no neutral grays, so midtones snap onto dark inks. A gamma
+    lift (``gamma`` < 1 brightens) plus an optional per-channel autocontrast
+    pull the image into a lighter, punchier range before quantization.
+    """
+    rgb = img.convert("RGB")
+    if autocontrast:
+        rgb = ImageOps.autocontrast(rgb, cutoff=1)
+    if gamma and gamma != 1.0:
+        lut = [round(((i / 255.0) ** gamma) * 255.0) for i in range(256)]
+        lut = [min(255, max(0, v)) for v in lut]
+        rgb = rgb.point(lut * 3)
+    return rgb
+
+
 def quantize_to_palette(img: Image.Image, dither: bool = True) -> Image.Image:
     """Map an RGB image onto the Spectra-6 palette with optional dithering."""
     rgb = img.convert("RGB")
@@ -100,11 +122,20 @@ def png_bytes_to_display_png(
     background: tuple[int, int, int] = (255, 255, 255),
     dither: bool = True,
     auto_rotate: bool = True,
+    enhance: bool = False,
+    gamma: float = 0.75,
+    autocontrast: bool = True,
 ) -> bytes:
-    """Full pipeline: raw image bytes -> 400x600 Spectra-6 PNG bytes."""
+    """Full pipeline: raw image bytes -> 400x600 Spectra-6 PNG bytes.
+
+    ``enhance`` applies the e-ink pre-lighten step (for photos). It is left off
+    for HTML/text content, which is already clean black-on-white/color.
+    """
     img = Image.open(io.BytesIO(data))
     img = auto_orient(img, auto_rotate=auto_rotate)
     fitted = fit_to_target(img, mode=fit_mode, background=background)
+    if enhance:
+        fitted = enhance_for_eink(fitted, gamma=gamma, autocontrast=autocontrast)
     quantized = quantize_to_palette(fitted, dither=dither)
     out = io.BytesIO()
     quantized.save(out, format="PNG", optimize=True)

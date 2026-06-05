@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    # Image rendering for e-ink. Photos tend to look dark on the Spectra-6
+    # palette, so they are pre-lightened before quantization:
+    #   * eink_gamma < 1.0 brightens midtones (1.0 = off).
+    #   * eink_autocontrast stretches the tonal range (per-channel).
+    eink_gamma: float = 0.75
+    eink_autocontrast: bool = True
+
     @field_validator("telegram_allowed_user_ids")
     @classmethod
     def _strip_user_ids(cls, value: str) -> str:

@@ -10,27 +10,24 @@ card template. Re-run it if the source logos change:
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageOps
 
-ASSETS = Path(__file__).resolve().parent.parent / "app" / "assets"
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
 
-# Spectra-6 limited palette (must match app/render/image_ops.py).
-SPECTRA6 = [
-    (0, 0, 0),        # black
-    (255, 255, 255),  # white
-    (220, 30, 30),    # red
-    (240, 200, 40),   # yellow
-    (40, 80, 200),    # blue
-    (40, 160, 80),    # green
-]
+# Single source of truth for the palette.
+from app.render.image_ops import SPECTRA6_PALETTE  # noqa: E402
+
+ASSETS = _ROOT / "app" / "assets"
 
 WHITE = (255, 255, 255)
 MAX_W, MAX_H = 300, 52
 
 # Chromatic palette entries (no black/white) used for saturated pixels.
-CHROMATIC = [(220, 30, 30), (240, 200, 40), (40, 80, 200), (40, 160, 80)]
+CHROMATIC = [c for c in SPECTRA6_PALETTE if c not in ((0, 0, 0), WHITE)]
 SAT_THRESHOLD = 55   # below this, a pixel is treated as gray
 LUMA_THRESHOLD = 150  # gray pixels darker than this become black, else white
 
@@ -39,7 +36,7 @@ CONFIGS = [
     {
         "src": "Scrubs_(TV_series)_logo.svg.png",
         "out": "scrubs_header.png",
-        "tint": (40, 160, 80),  # recolor teal -> palette green via alpha mask
+        "tint": SPECTRA6_PALETTE[5],  # recolor teal -> palette green via alpha mask
     },
     {
         "src": "The Office TV Show Sign Logo Vector.svg .png",
