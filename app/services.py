@@ -355,6 +355,24 @@ class Services:
     def _image_url(self, image_id: str) -> str:
         return f"/api/device/{self.settings.device_id}/image/{image_id}"
 
+    async def get_next_preview(self) -> Optional[tuple[str, str]]:
+        """Path + image_id of the next image the device will display, if any.
+
+        Falls back to the most recently rendered image so a preview is available
+        even when the current item was already shown (e.g. a held static image).
+        """
+        ready = await queue_service.next_ready_image(self.db, self.settings.device_id)
+        if ready is None:
+            ready = await queue_service.latest_rendered_image(
+                self.db, self.settings.device_id
+            )
+        if ready is None:
+            return None
+        path = Path(ready.path)
+        if not path.exists():
+            return None
+        return str(path), ready.image_id
+
     async def get_stats_summary(self, hours: int = 24) -> dict:
         """Aggregate recent telemetry for a quick at-a-glance summary."""
         since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()

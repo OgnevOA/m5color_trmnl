@@ -22,6 +22,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     BotCommand,
     CallbackQuery,
+    FSInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
@@ -47,6 +48,7 @@ HELP_TEXT = (
     "/stats - show device telemetry summary\n"
     "/clear - clear pending queue entries\n"
     "/next - skip to / generate the next item\n"
+    "/preview - send the next image to be displayed as a photo\n"
     "/night on|off|status - control night mode\n\n"
     "Send any text to display it. Send a photo to show it on the device.\n"
     "Prefix a message with 'qr:' to render it as a QR code "
@@ -62,6 +64,7 @@ BOT_COMMANDS = [
     BotCommand(command="mode", description="Set the active mode"),
     BotCommand(command="interval", description="Set polling interval (minutes)"),
     BotCommand(command="next", description="Generate / skip to the next item"),
+    BotCommand(command="preview", description="Send the next image as a photo"),
     BotCommand(command="queue", description="Show queue status"),
     BotCommand(command="stats", description="Show device telemetry summary"),
     BotCommand(command="clear", description="Clear the pending queue"),
@@ -94,9 +97,9 @@ def main_menu() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [_btn("Status", "status"), _btn("Queue", "queue")],
             [_btn("Mode", "modes"), _btn("Interval", "interval")],
-            [_btn("Next", "next"), _btn("Clear queue", "clear")],
-            [_btn("Stats", "stats"), _btn("Night mode", "night")],
-            [_btn("Help", "help")],
+            [_btn("Next", "next"), _btn("Preview", "preview")],
+            [_btn("Stats", "stats"), _btn("Clear queue", "clear")],
+            [_btn("Night mode", "night"), _btn("Help", "help")],
         ]
     )
 
@@ -271,6 +274,30 @@ def build_router(services: Services) -> Router:
     async def cmd_stats(message: Message) -> None:
         await message.answer(await stats_text(services), reply_markup=main_menu())
 
+    async def send_preview(message: Message) -> None:
+        preview = await services.get_next_preview()
+        if preview is None:
+            pending = (await services.get_status_snapshot()).queue_pending
+            if pending:
+                await message.answer(
+                    "The next image is still rendering \u2014 try /preview again "
+                    "in a moment."
+                )
+            else:
+                await message.answer(
+                    "Nothing to preview yet. Use Next to generate an item, or "
+                    "send content."
+                )
+            return
+        path, image_id = preview
+        await message.answer_photo(
+            FSInputFile(path), caption=f"Next up on the display ({image_id})"
+        )
+
+    @router.message(Command("preview"))
+    async def cmd_preview(message: Message) -> None:
+        await send_preview(message)
+
     @router.message(Command("clear"))
     async def cmd_clear(message: Message) -> None:
         cleared = await services.clear_queue()
@@ -350,6 +377,10 @@ def build_router(services: Services) -> Router:
         elif action == "stats":
             await _safe_edit(callback, await stats_text(services), main_menu())
             await callback.answer("Refreshed")
+        elif action == "preview":
+            await callback.answer("Sending preview...")
+            if callback.message is not None:
+                await send_preview(callback.message)
         elif action == "modes":
             await _safe_edit(callback, "Select a mode:", modes_menu(s.mode))
             await callback.answer()

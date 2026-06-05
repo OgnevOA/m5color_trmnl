@@ -187,6 +187,18 @@ async def next_ready_image(db: Database, device_id: str) -> Optional[RenderedIma
     return _row_to_rendered(row) if row else None
 
 
+async def latest_rendered_image(
+    db: Database, device_id: str
+) -> Optional[RenderedImage]:
+    """Most recently rendered image for the device (any status)."""
+    row = await db.fetchone(
+        """SELECT * FROM rendered_images
+           WHERE device_id = ? ORDER BY seq DESC LIMIT 1""",
+        (device_id,),
+    )
+    return _row_to_rendered(row) if row else None
+
+
 async def get_rendered_image(
     db: Database, device_id: str, image_id: str
 ) -> Optional[RenderedImage]:
