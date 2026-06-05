@@ -1,0 +1,210 @@
+/* Weather card styles. Portrait 400x600, Spectra-6 flat colors only.
+   Layered on top of base.css. Color is used sparingly and semantically:
+   yellow = sun, blue = water/cold, red = heat; structure is black on white. */
+
+.wx-page {
+  width: 380px;
+  height: 580px;
+  margin: 10px;
+  padding: 22px 24px;
+  border: 2px solid #000000;
+  display: flex;
+  flex-direction: column;
+}
+
+.wx-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 3px solid #000000;
+  padding-bottom: 10px;
+}
+
+.wx-city {
+  font-size: 22px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  max-width: 60%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.wx-date {
+  font-size: 15px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #333333;
+  white-space: nowrap;
+  flex: none;
+}
+
+.wx-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.wx-icon {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  flex: none;
+}
+
+.wx-temp-wrap {
+  display: flex;
+  align-items: flex-start;
+  line-height: 1;
+}
+
+.wx-temp {
+  font-family: "DejaVu Sans Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  font-size: 104px;
+  font-weight: 800;
+  letter-spacing: -3px;
+  line-height: 0.9;
+}
+
+.wx-unit {
+  font-size: 34px;
+  font-weight: 700;
+  margin-top: 8px;
+}
+
+.wx-cond {
+  text-align: center;
+  margin-top: 6px;
+}
+
+.wx-cond .desc {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.wx-cond .feels {
+  font-size: 15px;
+  color: #333333;
+  margin-top: 2px;
+}
+
+/* Hi/Lo range bar */
+.wx-range {
+  margin-top: 18px;
+}
+
+.wx-range .track {
+  position: relative;
+  height: 8px;
+  background: #ffffff;
+  border: 2px solid #000000;
+  border-radius: 6px;
+  margin: 0 6px;
+}
+
+.wx-range .marker {
+  position: absolute;
+  top: -7px;
+  width: 4px;
+  height: 18px;
+  background: #000000;
+  transform: translateX(-50%);
+}
+
+.wx-range .labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.wx-range .lo {
+  color: #1f50c8;
+}
+
+.wx-range .hi {
+  color: #dc1e1e;
+}
+
+.wx-range .tag {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #555555;
+  display: block;
+}
+
+/* Sunrise / sunset arc */
+.wx-arc {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.wx-arc .arc-svg {
+  line-height: 0;
+}
+
+.wx-arc .sun-times {
+  display: flex;
+  justify-content: space-between;
+  width: 304px;
+  margin-top: -2px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.wx-arc .sun-times .tag {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #555555;
+}
+
+/* Details row */
+.wx-details {
+  margin-top: auto;
+  display: flex;
+  justify-content: space-around;
+  border-top: 3px solid #000000;
+  padding-top: 14px;
+}
+
+.wx-detail {
+  text-align: center;
+}
+
+.wx-detail .value {
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.wx-detail .label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #555555;
+  margin-top: 2px;
+}
+
+.wx-detail .arrow {
+  display: inline-block;
+  color: #1f50c8;
+  font-weight: 800;
+}
+
+.wx-footer {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #555555;
+  text-align: right;
+}

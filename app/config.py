@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     eink_gamma: float = 0.75
     eink_autocontrast: bool = True
 
+    # Weather mode (OpenWeatherMap). The "weather" mode is disabled gracefully
+    # (shows a hint) until openweather_api_key is set.
+    openweather_api_key: str = ""
+    weather_city: str = "Tel Aviv,IL"
+    weather_units: str = "metric"
+    weather_lang: str = "en"
+
     @field_validator("telegram_allowed_user_ids")
     @classmethod
     def _strip_user_ids(cls, value: str) -> str:

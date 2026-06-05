@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import math
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -11,6 +12,8 @@ from pathlib import Path
 import qrcode
 from qrcode.constants import ERROR_CORRECT_M
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+from . import weather_icons
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _ASSETS_DIR = Path(__file__).parent.parent / "assets"
@@ -47,6 +50,11 @@ def _env() -> Environment:
 @lru_cache
 def _base_css() -> str:
     return (_TEMPLATES_DIR / "base.css").read_text(encoding="utf-8")
+
+
+@lru_cache
+def _weather_css() -> str:
+    return (_TEMPLATES_DIR / "weather.css").read_text(encoding="utf-8")
 
 
 def render_text_html(
@@ -186,4 +194,66 @@ def render_quote_card_html(
         logo_w=logo_w,
         logo_h=logo_h,
         font_px=font_px,
+    )
+
+
+# Sunrise/sunset arc geometry (flat SVG, palette colors only).
+_ARC_W, _ARC_H = 304, 116
+_ARC_CX, _ARC_BASE_Y, _ARC_R = 152, 104, 92
+_SUN_YELLOW = "#f6da48"
+
+
+def _sun_arc_svg(daylight_frac: float) -> str:
+    """A flat semicircle with a sun marker placed by ``daylight_frac`` (0..1).
+
+    0 sits at the left foot (sunrise), 1 at the right foot (sunset), 0.5 at the
+    apex. Only black strokes and a yellow sun fill are used so it quantizes
+    cleanly on the Spectra-6 panel.
+    """
+    frac = max(0.0, min(1.0, daylight_frac))
+    angle = math.pi * (1.0 - frac)  # 180deg (sunrise) -> 0deg (sunset)
+    sun_x = _ARC_CX + _ARC_R * math.cos(angle)
+    sun_y = _ARC_BASE_Y - _ARC_R * math.sin(angle)
+    left_x, right_x = _ARC_CX - _ARC_R, _ARC_CX + _ARC_R
+    return (
+        f'<svg viewBox="0 0 {_ARC_W} {_ARC_H}" width="{_ARC_W}" height="{_ARC_H}" '
+        f'xmlns="http://www.w3.org/2000/svg">'
+        f'<path d="M {left_x} {_ARC_BASE_Y} A {_ARC_R} {_ARC_R} 0 0 1 '
+        f'{right_x} {_ARC_BASE_Y}" fill="none" stroke="#000000" '
+        f'stroke-width="2" stroke-dasharray="2 7" stroke-linecap="round"/>'
+        f'<line x1="{left_x}" y1="{_ARC_BASE_Y}" x2="{right_x}" y2="{_ARC_BASE_Y}" '
+        f'stroke="#000000" stroke-width="2"/>'
+        f'<circle cx="{left_x}" cy="{_ARC_BASE_Y}" r="3.5" fill="#000000"/>'
+        f'<circle cx="{right_x}" cy="{_ARC_BASE_Y}" r="3.5" fill="#000000"/>'
+        f'<circle cx="{sun_x:.1f}" cy="{sun_y:.1f}" r="13" fill="{_SUN_YELLOW}" '
+        f'stroke="#000000" stroke-width="2.5"/>'
+        f"</svg>"
+    )
+
+
+def render_weather_html(data: dict) -> str:
+    """Render the weather card from a display dict built by ``WeatherMode``."""
+    code = data.get("icon", "01d")
+    icon = weather_icons.icon_data_uri(code)
+    icon_uri, icon_w, icon_h = icon if icon else (None, 0, 0)
+    accent = weather_icons.accent_for(code)
+
+    lo, hi, temp = data.get("lo"), data.get("hi"), data.get("temp")
+    if lo is None or hi is None or hi == lo:
+        now_frac = 0.5
+    else:
+        now_frac = max(0.0, min(1.0, (temp - lo) / (hi - lo)))
+
+    template = _env().get_template("weather.html")
+    return template.render(
+        base_css=_base_css(),
+        weather_css=_weather_css(),
+        accent=accent,
+        icon_uri=icon_uri,
+        icon_w=icon_w,
+        icon_h=icon_h,
+        arc_svg=_sun_arc_svg(data.get("daylight_frac", 0.5)),
+        now_frac_pct=round(now_frac * 100, 1),
+        footer_right=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        **data,
     )

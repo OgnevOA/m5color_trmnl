@@ -10,9 +10,12 @@ from __future__ import annotations
 import abc
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import httpx
+
+if TYPE_CHECKING:
+    from ..config import Settings
 
 
 class ContentKind(str, Enum):
@@ -37,6 +40,7 @@ class ModeContext:
     """Resources passed to a mode during content generation."""
 
     http: httpx.AsyncClient
+    settings: "Settings"
 
 
 class Mode(abc.ABC):

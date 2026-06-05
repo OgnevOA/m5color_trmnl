@@ -536,7 +536,7 @@ class Services:
 
         cfg = await self.get_device_settings()
         mode = get_mode(cfg.mode)
-        ctx = ModeContext(http=self.http)
+        ctx = ModeContext(http=self.http, settings=self.settings)
         content = await mode.generate(ctx)
         if content is None:
             return None

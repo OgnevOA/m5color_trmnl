@@ -15,11 +15,13 @@ from .random_friends_quote import RandomFriendsQuoteMode
 from .random_office_quote import RandomOfficeQuoteMode
 from .random_scrubs_quote import RandomScrubsQuoteMode
 from .random_xkcd import RandomXkcdMode
+from .weather import WeatherMode
 
 _MODE_CLASSES: dict[str, type[Mode]] = {
     PlainTextMode.name: PlainTextMode,
     ImageMode.name: ImageMode,
     QrCodeMode.name: QrCodeMode,
+    WeatherMode.name: WeatherMode,
     RandomFriendsQuoteMode.name: RandomFriendsQuoteMode,
     RandomOfficeQuoteMode.name: RandomOfficeQuoteMode,
     RandomScrubsQuoteMode.name: RandomScrubsQuoteMode,

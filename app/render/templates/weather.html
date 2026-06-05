@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      {{ base_css | safe }}
+      {{ weather_css | safe }}
+    </style>
+  </head>
+  <body>
+    <div class="wx-page">
+      <div class="wx-header">
+        <div class="wx-city">{{ city }}</div>
+        <div class="wx-date">{{ date_str }}</div>
+      </div>
+
+      <div class="wx-hero">
+        {% if icon_uri %}
+        <img class="wx-icon" src="{{ icon_uri }}" width="{{ icon_w }}" height="{{ icon_h }}" alt="{{ condition }}" />
+        {% endif %}
+        <div class="wx-temp-wrap">
+          <span class="wx-temp">{{ temp }}</span>
+          <span class="wx-unit">{{ unit }}</span>
+        </div>
+      </div>
+
+      <div class="wx-cond">
+        <span class="desc" style="border-bottom: 5px solid {{ accent }}; padding-bottom: 2px;">{{ condition }}</span>
+        <div class="feels">Feels like {{ feels_like }}{{ unit }}</div>
+      </div>
+
+      <div class="wx-range">
+        <div class="track">
+          <div class="marker" style="left: {{ now_frac_pct }}%;"></div>
+        </div>
+        <div class="labels">
+          <span class="lo"><span class="tag">Low</span>{{ lo }}{{ unit }}</span>
+          <span class="hi" style="text-align: right;"><span class="tag">High</span>{{ hi }}{{ unit }}</span>
+        </div>
+      </div>
+
+      <div class="wx-arc">
+        <div class="arc-svg">{{ arc_svg | safe }}</div>
+        <div class="sun-times">
+          <span><span class="tag">Sunrise</span>{{ sunrise }}</span>
+          <span style="text-align: right;"><span class="tag">Sunset</span>{{ sunset }}</span>
+        </div>
+      </div>
+
+      <div class="wx-details">
+        <div class="wx-detail">
+          <div class="value">{{ humidity }}%</div>
+          <div class="label">Humidity</div>
+        </div>
+        <div class="wx-detail">
+          <div class="value"><span class="arrow" style="transform: rotate({{ wind_deg }}deg);">&#8593;</span> {{ wind_speed }}</div>
+          <div class="label">Wind {{ wind_unit }}</div>
+        </div>
+      </div>
+
+      <div class="wx-footer">{{ footer_right }}</div>
+    </div>
+  </body>
+</html>
