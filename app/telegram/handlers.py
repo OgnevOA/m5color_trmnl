@@ -469,6 +469,26 @@ def build_router(services: Services) -> Router:
         if started_new:
             await message.answer("Switched to image mode. Image queued for rendering.")
 
+    @router.message(F.sticker)
+    async def on_sticker(message: Message, bot: Bot) -> None:
+        sticker = message.sticker
+        # Static stickers are WebP and render directly. Animated (.tgs) and
+        # video (.webm) stickers can't, but carry a static thumbnail we can use.
+        if sticker.is_animated or sticker.is_video:
+            if not sticker.thumbnail:
+                await message.answer("Can't render this sticker (no thumbnail).")
+                return
+            data = await _download(bot, sticker.thumbnail.file_id)
+            suffix = ".jpg"
+        else:
+            data = await _download(bot, sticker.file_id)
+            suffix = ".webp"
+        _, started_new = await services.enqueue_user_image(
+            data, suffix=suffix, media_group_id=message.media_group_id
+        )
+        if started_new:
+            await message.answer("Sticker queued (image mode).")
+
     @router.message(F.text)
     async def on_text(message: Message) -> None:
         text = (message.text or "").strip()

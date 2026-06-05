@@ -25,6 +25,7 @@ from .render.browser import BrowserRenderer
 from .render.worker import PreRenderWorker
 from .services import Services
 from .telegram.handlers import build_dispatcher, setup_bot_commands
+from .telegram.notify import Notifier
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ class AppContext:
     bot: Optional[Bot] = None
     dispatcher: Optional[Dispatcher] = None
     bot_task: Optional[asyncio.Task] = None
+    monitor_task: Optional[asyncio.Task] = None
 
 
 async def startup(
@@ -75,11 +77,16 @@ async def startup(
         dispatcher = build_dispatcher(services)
         ctx.bot = bot
         ctx.dispatcher = dispatcher
+        services.attach_notifier(Notifier(bot, settings.allowed_user_ids))
         with contextlib.suppress(Exception):
             await setup_bot_commands(bot)
         ctx.bot_task = asyncio.create_task(
             dispatcher.start_polling(bot, handle_signals=False),
             name="telegram-polling",
+        )
+        # Watch for the device going silent (offline) and alert once.
+        ctx.monitor_task = asyncio.create_task(
+            services.run_offline_monitor(), name="offline-monitor"
         )
         logger.info("Telegram bot polling started")
     elif run_bot:
@@ -90,6 +97,10 @@ async def startup(
 
 async def shutdown(ctx: AppContext) -> None:
     """Tear down background tasks and shared resources."""
+    if ctx.monitor_task is not None:
+        ctx.monitor_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await ctx.monitor_task
     if ctx.bot_task is not None and ctx.dispatcher is not None:
         with contextlib.suppress(Exception):
             await ctx.dispatcher.stop_polling()

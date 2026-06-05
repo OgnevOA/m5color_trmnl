@@ -58,6 +58,7 @@ class Services:
         self.settings = settings
         self.http = http
         self.worker = worker
+        self.notifier = None  # set via attach_notifier() once the bot exists
         self._uploads_dir = Path(settings.data_dir) / "uploads"
         # Keep strong references to fire-and-forget background tasks.
         self._bg_tasks: Set[asyncio.Task] = set()
@@ -72,6 +73,18 @@ class Services:
 
     def attach_worker(self, worker: PreRenderWorker) -> None:
         self.worker = worker
+
+    def attach_notifier(self, notifier) -> None:
+        self.notifier = notifier
+
+    async def _notify(self, text: str) -> None:
+        """Send a proactive alert if a notifier is attached (best-effort)."""
+        if self.notifier is None:
+            return
+        try:
+            await self.notifier.send(text)
+        except Exception:
+            logger.exception("notification failed")
 
     # ------------------------------------------------------------------ #
     # Seeding / state
@@ -219,7 +232,132 @@ class Services:
         now = get_now(self.settings.timezone)
         response, is_night = await self._decide_action(req, cfg, now)
         await self._record_stats(req, cfg, response, is_night)
+        await self._post_status_alerts(req, response)
         return response
+
+    # ------------------------------------------------------------------ #
+    # Device-health notifications (battery + offline recovery)
+    # ------------------------------------------------------------------ #
+    def _battery_bucket(
+        self, percent: Optional[float], prev: Optional[str]
+    ) -> str:
+        """Classify battery into ok/low/critical with clearing hysteresis.
+
+        Entering thresholds: critical <= 5, low <= low_battery_percent.
+        Clearing requires extra headroom so a battery hovering at the boundary
+        doesn't flap between buckets (and re-fire alerts).
+        """
+        if percent is None:
+            return prev or "ok"
+        crit = CRITICAL_BATTERY_PERCENT
+        low = float(self.settings.low_battery_percent)
+        if percent <= crit:
+            return "critical"
+        if percent <= low:
+            return "low"
+        # percent above the low threshold: clear only past a hysteresis margin.
+        if prev == "critical" and percent <= crit + 5:
+            return "critical"
+        if prev == "low" and percent <= low + 5:
+            return "low"
+        return "ok"
+
+    async def _post_status_alerts(
+        self, req: StatusRequest, response: ActionResponse
+    ) -> None:
+        """Edge-triggered battery alerts, back-online recovery, and bookkeeping.
+
+        Runs after every check-in: persists the wake interval we issued (for the
+        offline watcher), notifies on a worsening battery bucket, and clears a
+        prior offline alert.
+        """
+        row = await self.db.fetchone(
+            """SELECT battery_alert_state, offline_alerted
+                 FROM devices WHERE device_id = ?""",
+            (self.settings.device_id,),
+        )
+        prev_state = (row["battery_alert_state"] if row else None) or "ok"
+        was_offline = bool(row["offline_alerted"]) if row else False
+
+        new_state = self._battery_bucket(req.battery_percent, prev_state)
+        rank = {"ok": 0, "low": 1, "critical": 2}
+        pct = (
+            int(round(req.battery_percent))
+            if req.battery_percent is not None
+            else None
+        )
+        if rank[new_state] > rank[prev_state]:
+            if new_state == "critical":
+                await self._notify(
+                    f"\u26a0\ufe0f Critical battery ({pct}%) - "
+                    "sleeping to conserve power."
+                )
+            else:
+                await self._notify(
+                    f"\U0001faab Battery low ({pct}%) - time to charge."
+                )
+        elif new_state == "ok" and prev_state != "ok":
+            await self._notify(f"\u2705 Battery recovered ({pct}%).")
+
+        if was_offline:
+            await self._notify("\u2705 Device back online.")
+
+        await self.db.execute(
+            """UPDATE devices SET
+                 battery_alert_state = ?,
+                 offline_alerted = 0,
+                 expected_next_seconds = ?
+               WHERE device_id = ?""",
+            (new_state, response.next_wake_seconds, self.settings.device_id),
+        )
+
+    async def check_offline(self) -> None:
+        """Alert once when the device misses its expected check-in window."""
+        row = await self.db.fetchone(
+            """SELECT last_seen, expected_next_seconds, offline_alerted,
+                      last_battery_percent
+                 FROM devices WHERE device_id = ?""",
+            (self.settings.device_id,),
+        )
+        if row is None or not row["last_seen"] or row["offline_alerted"]:
+            return
+        try:
+            last_seen = datetime.fromisoformat(row["last_seen"])
+        except ValueError:
+            return
+        if last_seen.tzinfo is None:
+            last_seen = last_seen.replace(tzinfo=timezone.utc)
+        expected = row["expected_next_seconds"]
+        if expected is None:
+            cfg = await self.get_device_settings()
+            expected = cfg.interval_minutes * 60
+        grace = self.settings.offline_grace_minutes * 60
+        elapsed = (datetime.now(timezone.utc) - last_seen).total_seconds()
+        if elapsed <= expected + grace:
+            return
+        local_seen = last_seen.astimezone(get_now(self.settings.timezone).tzinfo)
+        pct = row["last_battery_percent"]
+        pct_txt = f"{int(round(pct))}%" if pct is not None else "unknown"
+        await self._notify(
+            "\U0001f4f5 Device offline: no check-in since "
+            f"{local_seen.strftime('%H:%M')} (last battery {pct_txt})."
+        )
+        await self.db.execute(
+            "UPDATE devices SET offline_alerted = 1 WHERE device_id = ?",
+            (self.settings.device_id,),
+        )
+
+    async def run_offline_monitor(self, interval_seconds: float = 300.0) -> None:
+        """Background loop: periodically check whether the device went silent."""
+        try:
+            while True:
+                await asyncio.sleep(interval_seconds)
+                try:
+                    await self.check_offline()
+                except Exception:
+                    logger.exception("offline check failed")
+        except asyncio.CancelledError:
+            raise
 
     async def _decide_action(
         self, req: StatusRequest, cfg: DeviceSettings, now: datetime

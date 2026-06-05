@@ -66,6 +66,20 @@ def auto_orient(img: Image.Image, auto_rotate: bool = True) -> Image.Image:
     return img
 
 
+def _flatten_alpha(
+    img: Image.Image, background: tuple[int, int, int] = (255, 255, 255)
+) -> Image.Image:
+    """Composite any transparency onto ``background`` and return an RGB image."""
+    if img.mode in ("RGBA", "LA") or (
+        img.mode == "P" and "transparency" in img.info
+    ):
+        rgba = img.convert("RGBA")
+        canvas = Image.new("RGBA", rgba.size, (*background, 255))
+        canvas.alpha_composite(rgba)
+        return canvas.convert("RGB")
+    return img
+
+
 def fit_to_target(
     img: Image.Image,
     mode: FitMode = "cover",
@@ -75,7 +89,12 @@ def fit_to_target(
 
     ``cover``   -> center-crop to fill the whole display (no padding).
     ``contain`` -> fit inside and pad with ``background`` color.
+
+    Images with alpha (transparent stickers/PNGs) are flattened onto
+    ``background`` first; converting RGBA straight to RGB drops alpha onto black,
+    which would render transparent areas as an ugly black box.
     """
+    img = _flatten_alpha(img, background)
     img = img.convert("RGB")
     if mode == "cover":
         return ImageOps.fit(img, TARGET_SIZE, method=Image.LANCZOS)

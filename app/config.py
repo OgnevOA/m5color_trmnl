@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     night_mode_start: str = "23:00"
     night_mode_end: str = "06:30"
 
+    # Device-health alerts (sent via Telegram). Implicitly enabled when the bot
+    # token + allowed_user_ids are set. low_battery_percent triggers a "time to
+    # charge" alert; offline_grace_minutes is the slack added on top of the
+    # device's expected next check-in before it is considered offline.
+    low_battery_percent: int = 20
+    offline_grace_minutes: int = 15
+
     # HTTP server
     host: str = "0.0.0.0"
     port: int = 8000

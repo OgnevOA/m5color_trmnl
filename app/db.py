@@ -116,7 +116,30 @@ class Database:
         await self._conn.execute("PRAGMA journal_mode=WAL;")
         await self._conn.execute("PRAGMA foreign_keys=ON;")
         await self._conn.executescript(SCHEMA)
+        await self._migrate()
         await self._conn.commit()
+
+    async def _migrate(self) -> None:
+        """Apply additive column migrations not covered by CREATE TABLE.
+
+        ``executescript(SCHEMA)`` uses ``CREATE TABLE IF NOT EXISTS``, so columns
+        added after a database was first created never appear. Add any missing
+        columns idempotently via guarded ``ALTER TABLE``.
+        """
+        assert self._conn is not None
+        cursor = await self._conn.execute("PRAGMA table_info(devices)")
+        existing = {row[1] for row in await cursor.fetchall()}
+        await cursor.close()
+        additions = {
+            "battery_alert_state": "TEXT",      # ok / low / critical
+            "offline_alerted": "INTEGER",       # 0 / 1
+            "expected_next_seconds": "INTEGER", # last wake interval we issued
+        }
+        for column, col_type in additions.items():
+            if column not in existing:
+                await self._conn.execute(
+                    f"ALTER TABLE devices ADD COLUMN {column} {col_type}"
+                )
 
     async def close(self) -> None:
         if self._conn is not None:
