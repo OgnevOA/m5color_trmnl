@@ -44,6 +44,27 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _avg_cycle_drain_mv(series: list[Optional[int]]) -> Optional[float]:
+    """Average per-cycle battery drain (mV) from an ordered battery_mv series.
+
+    Only counts consecutive *drops* (drain); charging upticks are ignored so a
+    mid-window charge doesn't mask the typical per-cycle consumption. Returns
+    ``None`` when there isn't enough data to compute a drop.
+    """
+    drops: list[int] = []
+    prev: Optional[int] = None
+    for mv in series:
+        if mv is None:
+            prev = None
+            continue
+        if prev is not None and mv < prev:
+            drops.append(prev - mv)
+        prev = mv
+    if not drops:
+        return None
+    return sum(drops) / len(drops)
+
+
 class Services:
     """Business logic facade over the database, scheduler, and queue."""
 
@@ -467,12 +488,23 @@ class Services:
     ) -> None:
         """Append a telemetry row for this wake (best-effort; never raises)."""
         try:
+            # Attach the server-side render time of the image being drawn (the
+            # device timings reported now describe the *previous* cycle).
+            render_ms = None
+            if response.image_id:
+                row = await self.db.fetchone(
+                    "SELECT render_ms FROM rendered_images WHERE image_id = ?",
+                    (response.image_id,),
+                )
+                if row is not None:
+                    render_ms = row["render_ms"]
             await self.db.execute(
                 """INSERT INTO device_stats
                    (device_id, created_at, battery_percent, battery_mv,
                     wake_reason, wifi_rssi, firmware_version, mode, action,
-                    next_wake_seconds, is_night)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    next_wake_seconds, is_night,
+                    wifi_ms, post_ms, download_ms, draw_ms, awake_ms, render_ms)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     self.settings.device_id,
                     _now_iso(),
@@ -485,6 +517,12 @@ class Services:
                     response.action.value,
                     response.next_wake_seconds,
                     None if is_night is None else (1 if is_night else 0),
+                    req.wifi_ms,
+                    req.post_ms,
+                    req.download_ms,
+                    req.draw_ms,
+                    req.awake_ms,
+                    render_ms,
                 ),
             )
         except Exception:
@@ -556,6 +594,12 @@ class Services:
                       MAX(battery_percent) AS bat_max,
                       AVG(battery_percent) AS bat_avg,
                       AVG(wifi_rssi) AS rssi_avg,
+                      AVG(wifi_ms) AS wifi_ms_avg,
+                      AVG(post_ms) AS post_ms_avg,
+                      AVG(download_ms) AS download_ms_avg,
+                      AVG(draw_ms) AS draw_ms_avg,
+                      AVG(awake_ms) AS awake_ms_avg,
+                      AVG(render_ms) AS render_ms_avg,
                       SUM(CASE WHEN action = 'draw' THEN 1 ELSE 0 END) AS draws,
                       SUM(CASE WHEN action = 'sleep' THEN 1 ELSE 0 END) AS sleeps,
                       SUM(CASE WHEN action = 'noop' THEN 1 ELSE 0 END) AS noops
@@ -567,6 +611,13 @@ class Services:
             "SELECT COUNT(*) AS c FROM device_stats WHERE device_id = ?",
             (self.settings.device_id,),
         )
+        mv_rows = await self.db.fetchall(
+            """SELECT battery_mv FROM device_stats
+               WHERE device_id = ? AND created_at >= ? AND battery_mv IS NOT NULL
+               ORDER BY id ASC""",
+            (self.settings.device_id, since),
+        )
+        battery_drain_mv = _avg_cycle_drain_mv([r["battery_mv"] for r in mv_rows])
         return {
             "hours": hours,
             "samples": int(row["samples"]) if row else 0,
@@ -574,7 +625,14 @@ class Services:
             "battery_min": row["bat_min"] if row else None,
             "battery_max": row["bat_max"] if row else None,
             "battery_avg": row["bat_avg"] if row else None,
+            "battery_drain_mv": battery_drain_mv,
             "rssi_avg": row["rssi_avg"] if row else None,
+            "wifi_ms_avg": row["wifi_ms_avg"] if row else None,
+            "post_ms_avg": row["post_ms_avg"] if row else None,
+            "download_ms_avg": row["download_ms_avg"] if row else None,
+            "draw_ms_avg": row["draw_ms_avg"] if row else None,
+            "awake_ms_avg": row["awake_ms_avg"] if row else None,
+            "render_ms_avg": row["render_ms_avg"] if row else None,
             "draws": int(row["draws"] or 0) if row else 0,
             "sleeps": int(row["sleeps"] or 0) if row else 0,
             "noops": int(row["noops"] or 0) if row else 0,

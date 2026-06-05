@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from pathlib import Path
 
 from .. import queue_service
@@ -98,6 +99,7 @@ class PreRenderWorker:
 
     async def _render_item(self, item: QueueItem) -> None:
         try:
+            t0 = time.monotonic()
             if item.kind == QueueItemKind.image:
                 png = await self._render_image_item(item)
             else:
@@ -107,6 +109,7 @@ class PreRenderWorker:
             path = Path(self._settings.rendered_images_dir) / f"{image_id}.png"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(png)
+            render_ms = int((time.monotonic() - t0) * 1000)
             await queue_service.record_rendered(
                 self._db,
                 device_id=item.device_id,
@@ -115,6 +118,7 @@ class PreRenderWorker:
                 path=str(path),
                 width=image_ops.TARGET_WIDTH,
                 height=image_ops.TARGET_HEIGHT,
+                render_ms=render_ms,
             )
             logger.info("Rendered queue item %s -> %s", item.id, image_id)
             try:

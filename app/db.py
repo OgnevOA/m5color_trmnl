@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS rendered_images (
     width        INTEGER NOT NULL,
     height       INTEGER NOT NULL,
     created_at   TEXT NOT NULL,
-    displayed_at TEXT
+    displayed_at TEXT,
+    render_ms    INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS telegram_users (
@@ -91,7 +92,13 @@ CREATE TABLE IF NOT EXISTS device_stats (
     mode              TEXT,
     action            TEXT,
     next_wake_seconds INTEGER,
-    is_night          INTEGER
+    is_night          INTEGER,
+    wifi_ms           INTEGER,
+    post_ms           INTEGER,
+    download_ms       INTEGER,
+    draw_ms           INTEGER,
+    awake_ms          INTEGER,
+    render_ms         INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_queue_status ON queue_items(device_id, status, id);
@@ -127,19 +134,33 @@ class Database:
         columns idempotently via guarded ``ALTER TABLE``.
         """
         assert self._conn is not None
-        cursor = await self._conn.execute("PRAGMA table_info(devices)")
-        existing = {row[1] for row in await cursor.fetchall()}
-        await cursor.close()
-        additions = {
-            "battery_alert_state": "TEXT",      # ok / low / critical
-            "offline_alerted": "INTEGER",       # 0 / 1
-            "expected_next_seconds": "INTEGER", # last wake interval we issued
+        additions: dict[str, dict[str, str]] = {
+            "devices": {
+                "battery_alert_state": "TEXT",      # ok / low / critical
+                "offline_alerted": "INTEGER",       # 0 / 1
+                "expected_next_seconds": "INTEGER", # last wake interval we issued
+            },
+            "device_stats": {
+                "wifi_ms": "INTEGER",
+                "post_ms": "INTEGER",
+                "download_ms": "INTEGER",
+                "draw_ms": "INTEGER",
+                "awake_ms": "INTEGER",
+                "render_ms": "INTEGER",
+            },
+            "rendered_images": {
+                "render_ms": "INTEGER",
+            },
         }
-        for column, col_type in additions.items():
-            if column not in existing:
-                await self._conn.execute(
-                    f"ALTER TABLE devices ADD COLUMN {column} {col_type}"
-                )
+        for table, columns in additions.items():
+            cursor = await self._conn.execute(f"PRAGMA table_info({table})")
+            existing = {row[1] for row in await cursor.fetchall()}
+            await cursor.close()
+            for column, col_type in columns.items():
+                if column not in existing:
+                    await self._conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
+                    )
 
     async def close(self) -> None:
         if self._conn is not None:

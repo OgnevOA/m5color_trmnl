@@ -123,12 +123,15 @@ async def record_rendered(
     path: str,
     width: int,
     height: int,
+    render_ms: Optional[int] = None,
 ) -> None:
     await db.execute(
         """INSERT INTO rendered_images
-           (image_id, device_id, queue_item_id, path, width, height, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (image_id, device_id, queue_item_id, path, width, height, _now_iso()),
+           (image_id, device_id, queue_item_id, path, width, height, created_at,
+            render_ms)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (image_id, device_id, queue_item_id, path, width, height, _now_iso(),
+         render_ms),
     )
     await db.execute(
         "UPDATE queue_items SET status = 'ready', image_id = ?, rendered_at = ? WHERE id = ?",

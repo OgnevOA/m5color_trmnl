@@ -12,11 +12,12 @@ mock_display/
 # Secrets / local config
 .env
 
+# Firmware local config & secrets (WiFi creds, device token, static IP).
+# secrets.h.example is the committed template.
+secrets.h
+
 # OS / editor
 .DS_Store
 
 # Planning artifact (not part of the deliverable repo)
 plan.md
-
-# Firmware sketch holds WiFi credentials/secrets for now; push later
-m5color_trmnl.ino

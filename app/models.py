@@ -50,6 +50,14 @@ class StatusRequest(BaseModel):
     firmware_version: Optional[str] = None
     wifi_rssi: Optional[int] = None
 
+    # Per-cycle timing telemetry (from the previous wake; see firmware). All
+    # optional so older firmware that omits them still validates.
+    wifi_ms: Optional[int] = Field(default=None, ge=0)
+    post_ms: Optional[int] = Field(default=None, ge=0)
+    download_ms: Optional[int] = Field(default=None, ge=0)
+    draw_ms: Optional[int] = Field(default=None, ge=0)
+    awake_ms: Optional[int] = Field(default=None, ge=0)
+
 
 class ActionResponse(BaseModel):
     """Strict action-based response returned to the device."""

@@ -190,14 +190,32 @@ async def stats_text(services: Services) -> str:
     def _fmt(v: object, suffix: str = "") -> str:
         return f"{v:.0f}{suffix}" if isinstance(v, (int, float)) else "?"
 
-    return (
-        "Telemetry (last 24h)\n"
-        f"- Wakes: {st['samples']} (total stored: {st['total_samples']})\n"
-        f"- Actions: {st['draws']} draw / {st['noops']} noop / {st['sleeps']} sleep\n"
+    lines = [
+        "Telemetry (last 24h)",
+        f"- Wakes: {st['samples']} (total stored: {st['total_samples']})",
+        f"- Actions: {st['draws']} draw / {st['noops']} noop / {st['sleeps']} sleep",
         f"- Battery: {_fmt(st['battery_min'], '%')}-{_fmt(st['battery_max'], '%')} "
-        f"(avg {_fmt(st['battery_avg'], '%')})\n"
-        f"- Avg WiFi RSSI: {_fmt(st['rssi_avg'], ' dBm')}"
-    )
+        f"(avg {_fmt(st['battery_avg'], '%')})",
+        f"- Avg WiFi RSSI: {_fmt(st['rssi_avg'], ' dBm')}",
+    ]
+
+    if st.get("battery_drain_mv") is not None:
+        lines.append(f"- Battery drain: ~{_fmt(st['battery_drain_mv'], ' mV')}/cycle")
+
+    # Timings only appear once telemetry-capable firmware (v0.2.0+) reports them.
+    timings = [
+        ("awake", st.get("awake_ms_avg")),
+        ("wifi", st.get("wifi_ms_avg")),
+        ("post", st.get("post_ms_avg")),
+        ("dl", st.get("download_ms_avg")),
+        ("draw", st.get("draw_ms_avg")),
+        ("render", st.get("render_ms_avg")),
+    ]
+    shown = [f"{label} {v:.0f}" for label, v in timings if isinstance(v, (int, float))]
+    if shown:
+        lines.append("- Timings avg (ms): " + ", ".join(shown))
+
+    return "\n".join(lines)
 
 
 # --------------------------------------------------------------------------- #
