@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Set
 
@@ -209,16 +209,26 @@ class Services:
         await self.record_status(req)
         cfg = await self.get_device_settings()
         now = get_now(self.settings.timezone)
+        response, is_night = await self._decide_action(req, cfg, now)
+        await self._record_stats(req, cfg, response, is_night)
+        return response
 
+    async def _decide_action(
+        self, req: StatusRequest, cfg: DeviceSettings, now: datetime
+    ) -> tuple[ActionResponse, Optional[bool]]:
+        """Compute the action for this wake. Returns ``(response, is_night)``."""
         # 1) Critical battery -> sleep long, never render.
         if (
             req.battery_percent is not None
             and req.battery_percent <= CRITICAL_BATTERY_PERCENT
         ):
-            return ActionResponse(
-                action=DeviceAction.sleep,
-                next_wake_seconds=CRITICAL_BATTERY_SLEEP_SECONDS,
-                message="Critical battery: sleeping to conserve power.",
+            return (
+                ActionResponse(
+                    action=DeviceAction.sleep,
+                    next_wake_seconds=CRITICAL_BATTERY_SLEEP_SECONDS,
+                    message="Critical battery: sleeping to conserve power.",
+                ),
+                None,
             )
 
         plan = compute_next_wake(
@@ -231,15 +241,18 @@ class Services:
 
         # 2) Night mode -> sleep through the night, don't touch display.
         if plan.is_night:
-            return ActionResponse(
-                action=DeviceAction.sleep,
-                next_wake_seconds=plan.next_wake_seconds,
-                message="Night mode: sleeping until morning.",
+            return (
+                ActionResponse(
+                    action=DeviceAction.sleep,
+                    next_wake_seconds=plan.next_wake_seconds,
+                    message="Night mode: sleeping until morning.",
+                ),
+                True,
             )
 
         # 3) Image mode: cycle through the current carousel, one per wake.
         if cfg.mode == "image":
-            return await self._handle_image_carousel(req, plan)
+            return await self._handle_image_carousel(req, plan), False
 
         # 4) Serve a pre-rendered image if one is ready.
         ready = await queue_service.next_ready_image(self.db, self.settings.device_id)
@@ -250,20 +263,58 @@ class Services:
             # Periodic modes show fresh content each wake: pre-render the next
             # item in the background so it is ready for the next wake.
             self._schedule_periodic_refill(cfg.mode)
-            return ActionResponse(
-                action=DeviceAction.draw,
-                image_id=ready.image_id,
-                image_url=self._image_url(ready.image_id),
-                next_wake_seconds=plan.next_wake_seconds,
+            return (
+                ActionResponse(
+                    action=DeviceAction.draw,
+                    image_id=ready.image_id,
+                    image_url=self._image_url(ready.image_id),
+                    next_wake_seconds=plan.next_wake_seconds,
+                ),
+                False,
             )
 
         # 5) Nothing new: keep current content (never render synchronously).
         # For periodic modes, also try to refill so the next wake has content.
         self._schedule_periodic_refill(cfg.mode)
-        return ActionResponse(
-            action=DeviceAction.noop,
-            next_wake_seconds=plan.next_wake_seconds,
+        return (
+            ActionResponse(
+                action=DeviceAction.noop,
+                next_wake_seconds=plan.next_wake_seconds,
+            ),
+            False,
         )
+
+    async def _record_stats(
+        self,
+        req: StatusRequest,
+        cfg: DeviceSettings,
+        response: ActionResponse,
+        is_night: Optional[bool],
+    ) -> None:
+        """Append a telemetry row for this wake (best-effort; never raises)."""
+        try:
+            await self.db.execute(
+                """INSERT INTO device_stats
+                   (device_id, created_at, battery_percent, battery_mv,
+                    wake_reason, wifi_rssi, firmware_version, mode, action,
+                    next_wake_seconds, is_night)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    self.settings.device_id,
+                    _now_iso(),
+                    req.battery_percent,
+                    req.battery_mv,
+                    req.wake_reason.value,
+                    req.wifi_rssi,
+                    req.firmware_version,
+                    cfg.mode,
+                    response.action.value,
+                    response.next_wake_seconds,
+                    None if is_night is None else (1 if is_night else 0),
+                ),
+            )
+        except Exception:
+            logger.exception("failed to record device stats")
 
     async def _handle_image_carousel(self, req: StatusRequest, plan) -> ActionResponse:
         """Advance the image carousel by one each wake, wrapping indefinitely.
@@ -303,6 +354,39 @@ class Services:
 
     def _image_url(self, image_id: str) -> str:
         return f"/api/device/{self.settings.device_id}/image/{image_id}"
+
+    async def get_stats_summary(self, hours: int = 24) -> dict:
+        """Aggregate recent telemetry for a quick at-a-glance summary."""
+        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        row = await self.db.fetchone(
+            """SELECT COUNT(*) AS samples,
+                      MIN(battery_percent) AS bat_min,
+                      MAX(battery_percent) AS bat_max,
+                      AVG(battery_percent) AS bat_avg,
+                      AVG(wifi_rssi) AS rssi_avg,
+                      SUM(CASE WHEN action = 'draw' THEN 1 ELSE 0 END) AS draws,
+                      SUM(CASE WHEN action = 'sleep' THEN 1 ELSE 0 END) AS sleeps,
+                      SUM(CASE WHEN action = 'noop' THEN 1 ELSE 0 END) AS noops
+               FROM device_stats
+               WHERE device_id = ? AND created_at >= ?""",
+            (self.settings.device_id, since),
+        )
+        total = await self.db.fetchone(
+            "SELECT COUNT(*) AS c FROM device_stats WHERE device_id = ?",
+            (self.settings.device_id,),
+        )
+        return {
+            "hours": hours,
+            "samples": int(row["samples"]) if row else 0,
+            "total_samples": int(total["c"]) if total else 0,
+            "battery_min": row["bat_min"] if row else None,
+            "battery_max": row["bat_max"] if row else None,
+            "battery_avg": row["bat_avg"] if row else None,
+            "rssi_avg": row["rssi_avg"] if row else None,
+            "draws": int(row["draws"] or 0) if row else 0,
+            "sleeps": int(row["sleeps"] or 0) if row else 0,
+            "noops": int(row["noops"] or 0) if row else 0,
+        }
 
     # ------------------------------------------------------------------ #
     # Status snapshot for the bot

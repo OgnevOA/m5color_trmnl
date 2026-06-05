@@ -44,6 +44,7 @@ HELP_TEXT = (
     "/interval N - set polling interval to N minutes\n"
     "/mode NAME - set the active mode\n"
     "/queue - show queue status\n"
+    "/stats - show device telemetry summary\n"
     "/clear - clear pending queue entries\n"
     "/next - skip to / generate the next item\n"
     "/night on|off|status - control night mode\n\n"
@@ -62,6 +63,7 @@ BOT_COMMANDS = [
     BotCommand(command="interval", description="Set polling interval (minutes)"),
     BotCommand(command="next", description="Generate / skip to the next item"),
     BotCommand(command="queue", description="Show queue status"),
+    BotCommand(command="stats", description="Show device telemetry summary"),
     BotCommand(command="clear", description="Clear the pending queue"),
     BotCommand(command="night", description="Control night mode"),
     BotCommand(command="help", description="Show help"),
@@ -93,7 +95,8 @@ def main_menu() -> InlineKeyboardMarkup:
             [_btn("Status", "status"), _btn("Queue", "queue")],
             [_btn("Mode", "modes"), _btn("Interval", "interval")],
             [_btn("Next", "next"), _btn("Clear queue", "clear")],
-            [_btn("Night mode", "night"), _btn("Help", "help")],
+            [_btn("Stats", "stats"), _btn("Night mode", "night")],
+            [_btn("Help", "help")],
         ]
     )
 
@@ -162,6 +165,28 @@ async def status_text(services: Services) -> str:
 async def queue_text(services: Services) -> str:
     s = await services.get_status_snapshot()
     return f"Queue: {s.queue_ready} ready, {s.queue_pending} pending."
+
+
+async def stats_text(services: Services) -> str:
+    st = await services.get_stats_summary(24)
+    if not st["samples"]:
+        return (
+            "Telemetry (last 24h)\n"
+            f"- No samples yet (total stored: {st['total_samples']}).\n"
+            "Stats accumulate on every device wake."
+        )
+
+    def _fmt(v: object, suffix: str = "") -> str:
+        return f"{v:.0f}{suffix}" if isinstance(v, (int, float)) else "?"
+
+    return (
+        "Telemetry (last 24h)\n"
+        f"- Wakes: {st['samples']} (total stored: {st['total_samples']})\n"
+        f"- Actions: {st['draws']} draw / {st['noops']} noop / {st['sleeps']} sleep\n"
+        f"- Battery: {_fmt(st['battery_min'], '%')}-{_fmt(st['battery_max'], '%')} "
+        f"(avg {_fmt(st['battery_avg'], '%')})\n"
+        f"- Avg WiFi RSSI: {_fmt(st['rssi_avg'], ' dBm')}"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -242,6 +267,10 @@ def build_router(services: Services) -> Router:
     async def cmd_queue(message: Message) -> None:
         await message.answer(await queue_text(services), reply_markup=main_menu())
 
+    @router.message(Command("stats"))
+    async def cmd_stats(message: Message) -> None:
+        await message.answer(await stats_text(services), reply_markup=main_menu())
+
     @router.message(Command("clear"))
     async def cmd_clear(message: Message) -> None:
         cleared = await services.clear_queue()
@@ -317,6 +346,9 @@ def build_router(services: Services) -> Router:
             await callback.answer()
         elif action == "queue":
             await _safe_edit(callback, await queue_text(services), main_menu())
+            await callback.answer("Refreshed")
+        elif action == "stats":
+            await _safe_edit(callback, await stats_text(services), main_menu())
             await callback.answer("Refreshed")
         elif action == "modes":
             await _safe_edit(callback, "Select a mode:", modes_menu(s.mode))

@@ -77,8 +77,26 @@ CREATE TABLE IF NOT EXISTS event_log (
     created_at TEXT NOT NULL
 );
 
+-- Time-series telemetry: one row per device status POST, for later aggregation
+-- (battery curves, wake frequency, draw/noop ratios, RSSI trends, ...).
+CREATE TABLE IF NOT EXISTS device_stats (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id         TEXT NOT NULL,
+    created_at        TEXT NOT NULL,
+    battery_percent   REAL,
+    battery_mv        INTEGER,
+    wake_reason       TEXT,
+    wifi_rssi         INTEGER,
+    firmware_version  TEXT,
+    mode              TEXT,
+    action            TEXT,
+    next_wake_seconds INTEGER,
+    is_night          INTEGER
+);
+
 CREATE INDEX IF NOT EXISTS idx_queue_status ON queue_items(device_id, status, id);
 CREATE INDEX IF NOT EXISTS idx_rendered_device ON rendered_images(device_id, seq);
+CREATE INDEX IF NOT EXISTS idx_stats_device_time ON device_stats(device_id, id);
 """
 
 
