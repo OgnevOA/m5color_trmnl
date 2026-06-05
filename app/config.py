@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_allowed_user_ids: str = ""
 
+    # Retention: how many most-recent rendered images to keep per device. Older
+    # ones are pruned (DB row + PNG file) after each render. Images still in the
+    # active image-mode carousel or currently shown on the device are always
+    # kept regardless of this count.
+    keep_rendered_images: int = 5
+
     # Scheduling
     default_interval_minutes: int = 60
     timezone: str = "Asia/Jerusalem"

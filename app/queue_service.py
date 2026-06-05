@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from .db import Database
 from .models import QueueItem, QueueItemKind, QueueItemStatus, RenderedImage
+
+logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -224,6 +228,55 @@ async def mark_displayed(db: Database, device_id: str, image_id: str) -> None:
 # --------------------------------------------------------------------------- #
 # Management
 # --------------------------------------------------------------------------- #
+async def prune_rendered_images(
+    db: Database, device_id: str, keep: int = 5
+) -> int:
+    """Delete all but the ``keep`` most-recent rendered images for a device.
+
+    Both the ``rendered_images`` row and the PNG file on disk are removed.
+    Images that are still in use are always protected regardless of ``keep``:
+    the active image-mode carousel set and the device's current ``last_image_id``.
+    Returns the number of images deleted.
+    """
+    if keep < 0:
+        return 0
+    recent = await db.fetchall(
+        """SELECT image_id FROM rendered_images
+           WHERE device_id = ? ORDER BY seq DESC LIMIT ?""",
+        (device_id, keep),
+    )
+    protected = {row["image_id"] for row in recent}
+    for image in await carousel_images(db, device_id):
+        protected.add(image.image_id)
+    dev = await db.fetchone(
+        "SELECT last_image_id FROM devices WHERE device_id = ?", (device_id,)
+    )
+    if dev and dev["last_image_id"]:
+        protected.add(dev["last_image_id"])
+
+    candidates = await db.fetchall(
+        "SELECT image_id, path FROM rendered_images WHERE device_id = ?",
+        (device_id,),
+    )
+    deleted = 0
+    for row in candidates:
+        if row["image_id"] in protected:
+            continue
+        if row["path"]:
+            try:
+                Path(row["path"]).unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning("could not delete %s: %s", row["path"], exc)
+        await db.execute(
+            "DELETE FROM rendered_images WHERE device_id = ? AND image_id = ?",
+            (device_id, row["image_id"]),
+        )
+        deleted += 1
+    if deleted:
+        logger.info("Pruned %d rendered image(s) for %s", deleted, device_id)
+    return deleted
+
+
 async def clear_pending(db: Database, device_id: str) -> int:
     rows = await db.fetchall(
         "SELECT id FROM queue_items WHERE device_id = ? AND status IN ('pending','ready')",

@@ -117,6 +117,14 @@ class PreRenderWorker:
                 height=image_ops.TARGET_HEIGHT,
             )
             logger.info("Rendered queue item %s -> %s", item.id, image_id)
+            try:
+                await queue_service.prune_rendered_images(
+                    self._db,
+                    item.device_id,
+                    keep=self._settings.keep_rendered_images,
+                )
+            except Exception:
+                logger.exception("prune after render failed for %s", item.device_id)
         except Exception as exc:
             logger.exception("Failed to render queue item %s", item.id)
             await queue_service.mark_failed(self._db, item.id, str(exc))
