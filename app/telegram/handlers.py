@@ -202,18 +202,35 @@ async def stats_text(services: Services) -> str:
     if st.get("battery_drain_mv") is not None:
         lines.append(f"- Battery drain: ~{_fmt(st['battery_drain_mv'], ' mV')}/cycle")
 
-    # Timings only appear once telemetry-capable firmware (v0.2.0+) reports them.
-    timings = [
-        ("awake", st.get("awake_ms_avg")),
-        ("wifi", st.get("wifi_ms_avg")),
-        ("post", st.get("post_ms_avg")),
-        ("dl", st.get("download_ms_avg")),
+    # Timings only appear once telemetry-capable firmware (v0.2.0+) reports them,
+    # split by whether the cycle drew the panel or just held (noop). They lag one
+    # cycle, so the counts are over reporting cycles, not the action counts above.
+    draw_timings = [
+        ("awake", st.get("draw_awake_avg")),
         ("draw", st.get("draw_ms_avg")),
-        ("render", st.get("render_ms_avg")),
+        ("dl", st.get("draw_download_avg")),
+        ("render", st.get("draw_render_avg")),
     ]
-    shown = [f"{label} {v:.0f}" for label, v in timings if isinstance(v, (int, float))]
-    if shown:
-        lines.append("- Timings avg (ms): " + ", ".join(shown))
+    draw_shown = [
+        f"{label} {v:.0f}" for label, v in draw_timings if isinstance(v, (int, float))
+    ]
+    if draw_shown:
+        lines.append(
+            f"- Draw cycles ({st.get('draw_cycles', 0)}) avg ms: "
+            + ", ".join(draw_shown)
+        )
+    if isinstance(st.get("idle_awake_avg"), (int, float)):
+        lines.append(
+            f"- Idle cycles ({st.get('idle_cycles', 0)}) avg ms: "
+            f"awake {st['idle_awake_avg']:.0f}"
+        )
+
+    net_timings = [("wifi", st.get("wifi_ms_avg")), ("post", st.get("post_ms_avg"))]
+    net_shown = [
+        f"{label} {v:.0f}" for label, v in net_timings if isinstance(v, (int, float))
+    ]
+    if net_shown:
+        lines.append("- Network avg ms: " + ", ".join(net_shown))
 
     return "\n".join(lines)
 

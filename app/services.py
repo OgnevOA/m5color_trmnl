@@ -488,13 +488,15 @@ class Services:
     ) -> None:
         """Append a telemetry row for this wake (best-effort; never raises)."""
         try:
-            # Attach the server-side render time of the image being drawn (the
-            # device timings reported now describe the *previous* cycle).
+            # The device timings reported now describe the *previous* cycle, in
+            # which the device drew whatever it currently shows (req.last_image_id).
+            # Align render_ms to that same image so all of this row's timings
+            # (wifi/post/download/draw/render) describe one consistent cycle.
             render_ms = None
-            if response.image_id:
+            if req.last_image_id:
                 row = await self.db.fetchone(
                     "SELECT render_ms FROM rendered_images WHERE image_id = ?",
-                    (response.image_id,),
+                    (req.last_image_id,),
                 )
                 if row is not None:
                     render_ms = row["render_ms"]
@@ -588,6 +590,9 @@ class Services:
     async def get_stats_summary(self, hours: int = 24) -> dict:
         """Aggregate recent telemetry for a quick at-a-glance summary."""
         since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        # Timings describe the *previous* cycle (one-cycle lag), so we bucket them
+        # by whether that cycle actually drew (draw_ms > 0) rather than by this
+        # row's `action`. A reporting row is one that carried metrics (awake_ms).
         row = await self.db.fetchone(
             """SELECT COUNT(*) AS samples,
                       MIN(battery_percent) AS bat_min,
@@ -596,10 +601,15 @@ class Services:
                       AVG(wifi_rssi) AS rssi_avg,
                       AVG(wifi_ms) AS wifi_ms_avg,
                       AVG(post_ms) AS post_ms_avg,
-                      AVG(download_ms) AS download_ms_avg,
-                      AVG(draw_ms) AS draw_ms_avg,
-                      AVG(awake_ms) AS awake_ms_avg,
-                      AVG(render_ms) AS render_ms_avg,
+                      SUM(CASE WHEN draw_ms > 0 THEN 1 ELSE 0 END) AS draw_cycles,
+                      SUM(CASE WHEN awake_ms IS NOT NULL AND COALESCE(draw_ms, 0) = 0
+                               THEN 1 ELSE 0 END) AS idle_cycles,
+                      AVG(CASE WHEN draw_ms > 0 THEN awake_ms END) AS draw_awake_avg,
+                      AVG(CASE WHEN draw_ms > 0 THEN draw_ms END) AS draw_ms_avg,
+                      AVG(CASE WHEN draw_ms > 0 THEN download_ms END) AS draw_download_avg,
+                      AVG(CASE WHEN draw_ms > 0 THEN render_ms END) AS draw_render_avg,
+                      AVG(CASE WHEN awake_ms IS NOT NULL AND COALESCE(draw_ms, 0) = 0
+                               THEN awake_ms END) AS idle_awake_avg,
                       SUM(CASE WHEN action = 'draw' THEN 1 ELSE 0 END) AS draws,
                       SUM(CASE WHEN action = 'sleep' THEN 1 ELSE 0 END) AS sleeps,
                       SUM(CASE WHEN action = 'noop' THEN 1 ELSE 0 END) AS noops
@@ -629,14 +639,35 @@ class Services:
             "rssi_avg": row["rssi_avg"] if row else None,
             "wifi_ms_avg": row["wifi_ms_avg"] if row else None,
             "post_ms_avg": row["post_ms_avg"] if row else None,
-            "download_ms_avg": row["download_ms_avg"] if row else None,
+            # Timings split by whether the (previous) cycle drew or held.
+            "draw_cycles": int(row["draw_cycles"] or 0) if row else 0,
+            "idle_cycles": int(row["idle_cycles"] or 0) if row else 0,
+            "draw_awake_avg": row["draw_awake_avg"] if row else None,
             "draw_ms_avg": row["draw_ms_avg"] if row else None,
-            "awake_ms_avg": row["awake_ms_avg"] if row else None,
-            "render_ms_avg": row["render_ms_avg"] if row else None,
+            "draw_download_avg": row["draw_download_avg"] if row else None,
+            "draw_render_avg": row["draw_render_avg"] if row else None,
+            "idle_awake_avg": row["idle_awake_avg"] if row else None,
             "draws": int(row["draws"] or 0) if row else 0,
             "sleeps": int(row["sleeps"] or 0) if row else 0,
             "noops": int(row["noops"] or 0) if row else 0,
         }
+
+    async def get_stats_records(
+        self, days: int = 7, limit: int = 5000
+    ) -> list[dict]:
+        """Raw telemetry rows for the last ``days`` days, newest first."""
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        rows = await self.db.fetchall(
+            """SELECT created_at, action, mode, wake_reason,
+                      battery_percent, battery_mv, wifi_rssi, firmware_version,
+                      next_wake_seconds, is_night,
+                      wifi_ms, post_ms, download_ms, draw_ms, awake_ms, render_ms
+               FROM device_stats
+               WHERE device_id = ? AND created_at >= ?
+               ORDER BY id DESC LIMIT ?""",
+            (self.settings.device_id, since, limit),
+        )
+        return [{key: row[key] for key in row.keys()} for row in rows]
 
     # ------------------------------------------------------------------ #
     # Status snapshot for the bot
