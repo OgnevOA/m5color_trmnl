@@ -19,4 +19,5 @@ struct StatusResponse {
   String   image_url;
   uint64_t next_wake_seconds = 30ULL * 60ULL;  // 30 min fallback default
   String   message;
+  String   epd_mode;  // refresh waveform hint: "" (quality) / "text" / "fast"
 };

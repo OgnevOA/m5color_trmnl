@@ -56,6 +56,8 @@ def _load_quotes(filename: str) -> tuple[dict, ...]:
 class JsonQuoteMode(Mode):
     """Base mode: pick a random quote from ``data_file`` and render a card."""
 
+    #: Quote cards are mostly black text on white; use the shorter waveform.
+    epd_mode = "text"
     #: Filename of the JSON collection (relative to the modes package).
     data_file: str = ""
     #: Title shown on the card (header fallback if no logo).

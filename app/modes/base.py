@@ -54,6 +54,10 @@ class Mode(abc.ABC):
     #:   * periodic=False -> "static" mode: it shows user-supplied content and
     #:     holds the display until changed manually (plain_text, image).
     periodic: bool = True
+    #: E-paper refresh waveform hint sent to the device on a ``draw``. "quality"
+    #: is the full color/grayscale refresh; "text" is the shorter waveform used
+    #: for monochrome-ish content (plain text, QR, line art) to save battery.
+    epd_mode: str = "quality"
 
     @abc.abstractmethod
     async def generate(self, ctx: ModeContext) -> Optional[ContentItem]:

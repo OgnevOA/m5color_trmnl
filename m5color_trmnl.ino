@@ -69,7 +69,7 @@
 // the sketch itself can be shared without leaking credentials.
 #include "secrets.h"
 
-static const char *FIRMWARE_VERSION = "0.2.0";
+static const char *FIRMWARE_VERSION = "0.3.0";
 
 // ===========================================================================
 // Tunables
@@ -291,6 +291,25 @@ static void displayBlank() {
   LOGF("[display] blank done in %lu ms\n", (unsigned long)(millis() - t0));
 }
 
+// Select the e-paper refresh waveform requested by the server. "text" uses a
+// shorter waveform (fewer frames -> faster refresh, less panel-on energy) for
+// monochrome-ish content; anything else falls back to the full-quality refresh.
+static void applyEpdMode(const String &mode) {
+  if (mode == "text") {
+    LOGLN("[display] epd mode: text (fast waveform)");
+    M5.Display.setEpdMode(epd_mode_t::epd_text);
+  } else if (mode == "fast") {
+    LOGLN("[display] epd mode: fast");
+    M5.Display.setEpdMode(epd_mode_t::epd_fast);
+  } else if (mode == "fastest") {
+    LOGLN("[display] epd mode: fastest");
+    M5.Display.setEpdMode(epd_mode_t::epd_fastest);
+  } else {
+    LOGLN("[display] epd mode: quality");
+    M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  }
+}
+
 static bool drawPngBuffer(const uint8_t *data, size_t len) {
   if (data == nullptr || len == 0) {
     LOGLN("[display] drawPng skipped: empty buffer");
@@ -392,6 +411,7 @@ static StatusResponse postStatus(float batteryPercent, int batteryMv,
   out.image_url         = resp["image_url"] | "";
   out.next_wake_seconds = resp["next_wake_seconds"] | FALLBACK_UNREACHABLE_SECONDS;
   out.message           = resp["message"] | "";
+  out.epd_mode          = resp["epd_mode"] | "";
   LOGF("[http] parsed: action=%s image_id=%s next_wake=%llus\n",
        out.action.c_str(), out.image_id.c_str(), out.next_wake_seconds);
   LOGF("[http] image_url=%s\n",
@@ -508,6 +528,12 @@ static void handleAction(const StatusResponse &r) {
       LOGLN("[action] image download FAILED; keeping current display");
       return;
     }
+    // The image is in RAM; the radio is no longer needed during the (long)
+    // panel refresh. Power it down now to save ~80-120 mA across the draw, and
+    // drop the CPU clock since the refresh runs on M5GFX's background DMA task.
+    shutdownWiFi();
+    setCpuFrequencyMhz(80);
+    applyEpdMode(r.epd_mode);
     if (drawPngBuffer(png, len)) {
       strncpy(rtc_last_image_id, r.image_id.c_str(), sizeof(rtc_last_image_id) - 1);
       rtc_last_image_id[sizeof(rtc_last_image_id) - 1] = '\0';
@@ -520,6 +546,8 @@ static void handleAction(const StatusResponse &r) {
     }
     free(png);
   } else if (r.action == "blank") {
+    shutdownWiFi();
+    setCpuFrequencyMhz(80);
     displayBlank();
     rtc_last_image_id[0] = '\0';
   } else {

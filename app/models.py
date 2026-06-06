@@ -67,6 +67,9 @@ class ActionResponse(BaseModel):
     image_url: Optional[str] = None
     next_wake_seconds: int
     message: Optional[str] = None
+    #: E-paper refresh waveform hint for a ``draw`` ("quality"/"text"/...). The
+    #: device applies it via setEpdMode; absent/empty means full-quality refresh.
+    epd_mode: Optional[str] = None
 
 
 # --------------------------------------------------------------------------- #

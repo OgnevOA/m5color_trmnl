@@ -449,6 +449,7 @@ class Services:
                     image_id=ready.image_id,
                     image_url=self._image_url(ready.image_id),
                     next_wake_seconds=plan.next_wake_seconds,
+                    epd_mode=get_mode(cfg.mode).epd_mode,
                 ),
                 False,
             )
