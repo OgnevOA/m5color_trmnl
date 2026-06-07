@@ -29,6 +29,9 @@
  */
 
 #include <M5Unified.h>
+#include <M5PM1.h>
+#include <Adafruit_NeoPixel.h>
+#include <Preferences.h>
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
@@ -38,7 +41,6 @@
 #include <esp_wifi.h>
 #include <esp_system.h>
 #include <esp_chip_info.h>
-#include <driver/rtc_io.h>
 
 // Custom types live in a header so the Arduino auto-generated prototypes (which
 // are inserted above the sketch body) can see them. See trmnl_types.h.
@@ -69,7 +71,7 @@
 // the sketch itself can be shared without leaking credentials.
 #include "secrets.h"
 
-static const char *FIRMWARE_VERSION = "0.3.0";
+static const char *FIRMWARE_VERSION = "0.4.0";
 
 // ===========================================================================
 // Tunables
@@ -86,38 +88,113 @@ static const uint64_t FALLBACK_UNREACHABLE_SECONDS  = 30ULL * 60ULL;     // 30 m
 static const uint64_t FALLBACK_LOW_BATTERY_SECONDS  = 6ULL * 3600ULL;    // 6 h
 static const float    CRITICAL_BATTERY_PERCENT      = 5.0f;
 
-// User button GPIOs (active-low) used as deep-sleep wake sources.
-static const gpio_num_t BTN_A = GPIO_NUM_10;
-static const gpio_num_t BTN_B = GPIO_NUM_9;
-static const gpio_num_t BTN_C = GPIO_NUM_1;
-static const uint64_t   BUTTON_WAKE_MASK =
-    (1ULL << BTN_A) | (1ULL << BTN_B) | (1ULL << BTN_C);
+// Cap a single sleep at 4 h: the RX8130/M5PM1 timer maxes out near 15,300 s, so
+// for a long night sleep the device wakes once mid-night, re-checks in (~2 s),
+// and the server re-issues a sleep. Negligible cost at ~92 uA standby.
+static const int MAX_SLEEP_SECONDS = 14400;  // 4 h
+
+// RGB activity LED: 2x WS2812 on GPIO21, power-gated by the M5PM1 RGB LDO.
+static const uint8_t LED_PIN        = 21;
+static const uint8_t LED_COUNT      = 2;
+static const uint8_t LED_BRIGHTNESS = 70;  // ~27% of 255 (kept dim on purpose)
 
 // ===========================================================================
-// Persistent state across deep sleep (kept in RTC slow memory)
+// Persistent state (NVS) - survives the M5PM1 power-off
 // ===========================================================================
-RTC_DATA_ATTR char rtc_last_image_id[32] = {0};
-RTC_DATA_ATTR char rtc_pending_error[48] = {0};
-RTC_DATA_ATTR uint32_t rtc_boot_count = 0;
+// The device fully powers off between wakes (M5PM1 RTC power-off, ~92 uA), so
+// state must live in NVS/flash. RTC slow memory (RTC_DATA_ATTR) is lost when the
+// SoC loses power, so it cannot be used here.
+static Preferences  g_prefs;
+static const char  *NVS_NAMESPACE = "trmnl";
 
 // Per-cycle timing telemetry. The download/draw/awake values are only known
 // after the status POST that triggered them, so each cycle's metrics are stashed
-// here and reported on the *next* wake's POST (one-cycle lag, by design).
-RTC_DATA_ATTR struct {
+// and reported on the *next* wake's POST (one-cycle lag, by design).
+struct Metrics {
   uint32_t wifi_ms;
   uint32_t post_ms;
   uint32_t download_ms;
   uint32_t draw_ms;
   uint32_t awake_ms;
   bool     valid;
-} rtc_metrics = {0, 0, 0, 0, 0, false};
+};
+
+static char     g_last_image_id[32] = {0};
+static char     g_pending_error[48] = {0};
+static uint32_t g_boot_count        = 0;
+static Metrics  g_metrics           = {0, 0, 0, 0, 0, false};
 
 // Scratch timings for the *current* cycle, filled in as each phase completes
-// and flushed into rtc_metrics just before deep sleep.
+// and flushed into g_metrics just before sleep.
 static uint32_t g_wifi_ms     = 0;
 static uint32_t g_post_ms     = 0;
 static uint32_t g_download_ms = 0;
 static uint32_t g_draw_ms     = 0;
+
+// ===========================================================================
+// Power management (M5PM1) + RGB activity LED
+// ===========================================================================
+static M5PM1            g_pm1;
+static Adafruit_NeoPixel g_pixels(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+static bool             g_pm1_ready = false;
+// Wake-source bitmask read from the M5PM1 on boot (timer / power button / ...).
+static uint8_t          g_wake_src  = 0;
+
+// LED colors (full-intensity; global brightness scales them down to ~27%).
+static void setStatusLed(uint8_t r, uint8_t g, uint8_t b) {
+  if (!g_pm1_ready) return;
+  uint32_t c = g_pixels.Color(r, g, b);
+  for (uint8_t i = 0; i < LED_COUNT; ++i) g_pixels.setPixelColor(i, c);
+  g_pixels.show();
+}
+#define LED_OK()       setStatusLed(0, 255, 0)    // green: awake / normal
+#define LED_CONNECT()  setStatusLed(0, 0, 255)    // blue: connecting WiFi
+#define LED_DRAW()     setStatusLed(255, 120, 0)  // amber: refreshing panel
+#define LED_ERROR()    setStatusLed(255, 0, 0)    // red: error / low battery
+
+// Turn the LED off and cut its power rail so it draws nothing in standby.
+static void ledOff() {
+  if (!g_pm1_ready) return;
+  g_pixels.clear();
+  g_pixels.show();
+  g_pm1.setLdoEnable(false);
+}
+
+// Bring up the M5PM1 (RGB rail + power control) and the NeoPixel LEDs, and grab
+// the wake source for this boot before it is cleared.
+static void initPowerAndLed() {
+  g_pm1_ready = (g_pm1.begin(&M5.In_I2C, M5PM1_DEFAULT_ADDR, M5PM1_I2C_FREQ_100K)
+                 == M5PM1_OK);
+  if (g_pm1_ready) {
+    g_pm1.setLdoEnable(true);  // power the RGB LED rail
+    uint8_t src = 0;
+    if (g_pm1.getWakeSource(&src, M5PM1_CLEAN_ONCE) == M5PM1_OK) g_wake_src = src;
+  }
+  g_pixels.begin();
+  g_pixels.setBrightness(LED_BRIGHTNESS);
+  g_pixels.clear();
+  g_pixels.show();
+}
+
+// ===========================================================================
+// Persistent state (NVS) load / save
+// ===========================================================================
+static void loadState() {
+  g_prefs.begin(NVS_NAMESPACE, false);
+  g_boot_count = g_prefs.getUInt("boot", 0) + 1;
+  g_prefs.getString("img", g_last_image_id, sizeof(g_last_image_id));
+  g_prefs.getString("err", g_pending_error, sizeof(g_pending_error));
+  if (g_prefs.getBytesLength("metrics") == sizeof(g_metrics)) {
+    g_prefs.getBytes("metrics", &g_metrics, sizeof(g_metrics));
+  }
+}
+
+static void saveState() {
+  g_prefs.putUInt("boot", g_boot_count);
+  g_prefs.putString("img", g_last_image_id);
+  g_prefs.putString("err", g_pending_error);
+  g_prefs.putBytes("metrics", &g_metrics, sizeof(g_metrics));
+}
 
 // ===========================================================================
 // Debug helpers
@@ -171,7 +248,7 @@ static void printBootInfo(const char *wakeReason) {
   LOGLN("=====================================================");
   LOGF("  m5color_trmnl firmware v%s\n", FIRMWARE_VERSION);
   LOGF("  boot #%u  reset=%s  wake=%s (reason=%s)\n",
-       rtc_boot_count,
+       g_boot_count,
        resetReasonString(esp_reset_reason()),
        wakeCauseString(esp_sleep_get_wakeup_cause()),
        wakeReason);
@@ -189,8 +266,8 @@ static void printBootInfo(const char *wakeReason) {
        (unsigned long)(ESP.getFreePsram() / 1024),
        (unsigned long)(ESP.getPsramSize() / 1024));
   LOGF("  RTC state: last_image='%s' pending_error='%s'\n",
-       rtc_last_image_id[0] ? rtc_last_image_id : "(none)",
-       rtc_pending_error[0] ? rtc_pending_error : "(none)");
+       g_last_image_id[0] ? g_last_image_id : "(none)",
+       g_pending_error[0] ? g_pending_error : "(none)");
   LOGF("  backend: %s  device: %s\n", BACKEND_URL, DEVICE_ID);
   LOGLN("=====================================================");
 #endif
@@ -206,15 +283,13 @@ static void logHeap(const char *tag) {
 // Helpers
 // ===========================================================================
 static const char *wakeReasonString() {
-  switch (esp_sleep_get_wakeup_cause()) {
-    case ESP_SLEEP_WAKEUP_TIMER: return "timer";
-    case ESP_SLEEP_WAKEUP_EXT0:
-    case ESP_SLEEP_WAKEUP_EXT1:
-    case ESP_SLEEP_WAKEUP_GPIO:  return "button";
-    default:
-      // First power-on / reset / brown-out: treat as manual on first boot.
-      return (rtc_boot_count == 0) ? "manual" : "unknown";
-  }
+  // After a full power-off the SoC cold-boots, so esp_sleep_get_wakeup_cause()
+  // is meaningless; the real cause comes from the M5PM1 wake-source bitmask.
+  if (g_wake_src & M5PM1_WAKE_SRC_TIM) return "timer";
+  if (g_wake_src & (M5PM1_WAKE_SRC_PWRBTN | M5PM1_WAKE_SRC_RSTBTN)) return "button";
+  if (g_wake_src & M5PM1_WAKE_SRC_VIN) return "manual";  // woken by USB plug-in
+  // First boot / unknown source.
+  return (g_boot_count <= 1) ? "manual" : "unknown";
 }
 
 static bool connectWiFi() {
@@ -343,20 +418,20 @@ static StatusResponse postStatus(float batteryPercent, int batteryMv,
   else                            doc["battery_percent"] = nullptr;
   if (batteryMv > 0)              doc["battery_mv"]       = batteryMv;
   doc["wake_reason"]      = wakeReason;
-  if (rtc_last_image_id[0]) doc["last_image_id"] = rtc_last_image_id;
+  if (g_last_image_id[0]) doc["last_image_id"] = g_last_image_id;
   else                      doc["last_image_id"] = nullptr;
   doc["firmware_version"] = FIRMWARE_VERSION;
   doc["wifi_rssi"]        = WiFi.RSSI();
-  if (rtc_pending_error[0]) doc["last_error"] = rtc_pending_error;
+  if (g_pending_error[0]) doc["last_error"] = g_pending_error;
 
   // Report the previous cycle's timings (this cycle's download/draw/awake are
-  // not known until after this POST returns; see rtc_metrics).
-  if (rtc_metrics.valid) {
-    doc["wifi_ms"]     = rtc_metrics.wifi_ms;
-    doc["post_ms"]     = rtc_metrics.post_ms;
-    doc["download_ms"] = rtc_metrics.download_ms;
-    doc["draw_ms"]     = rtc_metrics.draw_ms;
-    doc["awake_ms"]    = rtc_metrics.awake_ms;
+  // not known until after this POST returns; see g_metrics).
+  if (g_metrics.valid) {
+    doc["wifi_ms"]     = g_metrics.wifi_ms;
+    doc["post_ms"]     = g_metrics.post_ms;
+    doc["download_ms"] = g_metrics.download_ms;
+    doc["draw_ms"]     = g_metrics.draw_ms;
+    doc["awake_ms"]    = g_metrics.awake_ms;
   }
 
   String body;
@@ -523,7 +598,7 @@ static void handleAction(const StatusResponse &r) {
     uint8_t *png = downloadImage(r.image_url, &len);
     if (png == nullptr) {
       // Keep current content; report the failure on the next status post.
-      snprintf(rtc_pending_error, sizeof(rtc_pending_error),
+      snprintf(g_pending_error, sizeof(g_pending_error),
                "image_download_failed:%s", r.image_id.c_str());
       LOGLN("[action] image download FAILED; keeping current display");
       return;
@@ -533,14 +608,15 @@ static void handleAction(const StatusResponse &r) {
     // drop the CPU clock since the refresh runs on M5GFX's background DMA task.
     shutdownWiFi();
     setCpuFrequencyMhz(80);
+    LED_DRAW();
     applyEpdMode(r.epd_mode);
     if (drawPngBuffer(png, len)) {
-      strncpy(rtc_last_image_id, r.image_id.c_str(), sizeof(rtc_last_image_id) - 1);
-      rtc_last_image_id[sizeof(rtc_last_image_id) - 1] = '\0';
-      rtc_pending_error[0] = '\0';
-      LOGF("[action] displayed image_id=%s\n", rtc_last_image_id);
+      strncpy(g_last_image_id, r.image_id.c_str(), sizeof(g_last_image_id) - 1);
+      g_last_image_id[sizeof(g_last_image_id) - 1] = '\0';
+      g_pending_error[0] = '\0';
+      LOGF("[action] displayed image_id=%s\n", g_last_image_id);
     } else {
-      snprintf(rtc_pending_error, sizeof(rtc_pending_error),
+      snprintf(g_pending_error, sizeof(g_pending_error),
                "draw_failed:%s", r.image_id.c_str());
       LOGLN("[action] drawPng FAILED");
     }
@@ -548,8 +624,9 @@ static void handleAction(const StatusResponse &r) {
   } else if (r.action == "blank") {
     shutdownWiFi();
     setCpuFrequencyMhz(80);
+    LED_DRAW();
     displayBlank();
-    rtc_last_image_id[0] = '\0';
+    g_last_image_id[0] = '\0';
   } else {
     // "sleep" or "noop": keep the current display untouched.
     LOGF("[action] %s: keeping current display untouched\n", r.action.c_str());
@@ -565,45 +642,53 @@ static void handleAction(const StatusResponse &r) {
 // ===========================================================================
 static void enterDeepSleep(uint64_t seconds) {
   if (seconds < 1) seconds = 1;
+  if (seconds > (uint64_t)MAX_SLEEP_SECONDS) {
+    LOGF("[sleep] clamping %llu s -> %d s (RTC timer limit)\n",
+         seconds, MAX_SLEEP_SECONDS);
+    seconds = (uint64_t)MAX_SLEEP_SECONDS;
+  }
 
   // Snapshot this cycle's timings for the next wake to report. Done here so it
   // covers every exit path (critical battery, wifi/post failure, normal end).
-  rtc_metrics.wifi_ms     = g_wifi_ms;
-  rtc_metrics.post_ms     = g_post_ms;
-  rtc_metrics.download_ms = g_download_ms;
-  rtc_metrics.draw_ms     = g_draw_ms;
-  rtc_metrics.awake_ms    = millis();
-  rtc_metrics.valid       = true;
+  g_metrics.wifi_ms     = g_wifi_ms;
+  g_metrics.post_ms     = g_post_ms;
+  g_metrics.download_ms = g_download_ms;
+  g_metrics.draw_ms     = g_draw_ms;
+  g_metrics.awake_ms    = millis();
+  g_metrics.valid       = true;
   LOGF("[metrics] cycle: wifi=%lu post=%lu download=%lu draw=%lu awake=%lu ms\n",
-       (unsigned long)rtc_metrics.wifi_ms, (unsigned long)rtc_metrics.post_ms,
-       (unsigned long)rtc_metrics.download_ms, (unsigned long)rtc_metrics.draw_ms,
-       (unsigned long)rtc_metrics.awake_ms);
+       (unsigned long)g_metrics.wifi_ms, (unsigned long)g_metrics.post_ms,
+       (unsigned long)g_metrics.download_ms, (unsigned long)g_metrics.draw_ms,
+       (unsigned long)g_metrics.awake_ms);
+
+  // Persist state to NVS: the M5PM1 power-off cold-boots the SoC, so RTC RAM is
+  // lost. ~hourly writes are fine with NVS wear-leveling (years of endurance).
+  saveState();
+  g_prefs.end();
 
   LOGF("[sleep] next wake in %llu s (%.1f min)\n", seconds, seconds / 60.0);
 
   shutdownWiFi();
   LOGLN("[sleep] powering down e-paper controller");
   M5.Display.sleep();  // power down the panel controller
+  ledOff();            // LED off + cut the RGB rail so standby draws nothing
 
-  // Wake on timer.
-  esp_sleep_enable_timer_wakeup(seconds * 1000000ULL);
-
-  // Wake on any user-button press (active-low). EXT1 ANY_LOW on ESP32-S3.
-  // Use RTC-GPIO pull-ups so the lines idle high and the config is retained
-  // through deep sleep (the buttons are RTC-capable: GPIO1/9/10).
-  const gpio_num_t buttons[] = {BTN_A, BTN_B, BTN_C};
-  for (gpio_num_t pin : buttons) {
-    rtc_gpio_pullup_en(pin);
-    rtc_gpio_pulldown_dis(pin);
-  }
-  esp_sleep_enable_ext1_wakeup(BUTTON_WAKE_MASK, ESP_EXT1_WAKEUP_ANY_LOW);
-  LOGF("[sleep] wake sources: timer + buttons (GPIO %d/%d/%d)\n",
-       (int)BTN_A, (int)BTN_B, (int)BTN_C);
   logHeap("before sleep");
-
-  LOGLN("[sleep] entering deep sleep now");
+  LOGLN("[sleep] powering off (M5PM1 RTC wake)");
   Serial.flush();
-  esp_deep_sleep_start();  // never returns
+
+  // RTC-backed full power-off: the board drops to ~92 uA and the M5PM1 RTC
+  // powers it back on after `seconds`, cold-booting the SoC (setup() reruns).
+  M5.Power.timerSleep((int)seconds);
+
+  // Fallbacks if timerSleep returns (e.g. while on USB power it may not power
+  // off): try the M5PM1 native power-off, then a plain ESP timer deep sleep.
+  if (g_pm1_ready) {
+    g_pm1.timerSet((uint32_t)seconds, M5PM1_TIM_ACTION_POWERON);
+    g_pm1.shutdown();
+  }
+  esp_sleep_enable_timer_wakeup(seconds * 1000000ULL);
+  esp_deep_sleep_start();
 }
 
 // ===========================================================================
@@ -623,7 +708,12 @@ void setup() {
   M5.begin(cfg);            // powers the panel, buttons, RTC, etc.
   delay(50);
 
-  rtc_boot_count++;
+  // Bring up the M5PM1 (RGB rail + wake source) and load persisted state from
+  // NVS, then light the LED green to show we're awake and processing.
+  initPowerAndLed();
+  loadState();              // increments g_boot_count
+  LED_OK();
+
   const char *wakeReason = wakeReasonString();
   printBootInfo(wakeReason);
 
@@ -638,13 +728,16 @@ void setup() {
   if (batteryPercent >= 0 && batteryPercent <= CRITICAL_BATTERY_PERCENT) {
     LOGF("[battery] CRITICAL (<= %.0f%%); skipping update\n",
          CRITICAL_BATTERY_PERCENT);
-    snprintf(rtc_pending_error, sizeof(rtc_pending_error), "critical_battery");
+    LED_ERROR();
+    snprintf(g_pending_error, sizeof(g_pending_error), "critical_battery");
     enterDeepSleep(FALLBACK_LOW_BATTERY_SECONDS);
   }
 
   // --- WiFi ---
+  LED_CONNECT();
   if (!connectWiFi()) {
     LOGLN("[net] WiFi unavailable; backend unreachable -> fallback sleep");
+    LED_ERROR();
     enterDeepSleep(FALLBACK_UNREACHABLE_SECONDS);
   }
 
@@ -652,6 +745,7 @@ void setup() {
   StatusResponse r = postStatus(batteryPercent, batteryMv, wakeReason);
   if (!r.valid) {
     LOGLN("[net] status request failed -> fallback sleep");
+    LED_ERROR();
     enterDeepSleep(FALLBACK_UNREACHABLE_SECONDS);
   }
 
