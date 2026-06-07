@@ -17,7 +17,6 @@ _NUM_URL = "https://xkcd.com/{num}/info.0.json"
 class RandomXkcdMode(Mode):
     name = "random_xkcd"
     description = "Display a random XKCD comic."
-    epd_mode = "text"
 
     async def generate(self, ctx: ModeContext) -> Optional[ContentItem]:
         try:

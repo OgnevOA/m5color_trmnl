@@ -26,6 +26,8 @@ class NowPlayingMode(Mode):
     name = "now_playing"
     description = "Poster of whatever is playing in the living room."
     periodic = True
+    #: Cover art is continuous-tone: let the device dither it.
+    epd_mode = "quality"
 
     async def generate(self, ctx: ModeContext) -> Optional[ContentItem]:
         cfg = ctx.settings

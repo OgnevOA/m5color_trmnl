@@ -144,8 +144,15 @@ def png_bytes_to_display_png(
     enhance: bool = False,
     gamma: float = 0.75,
     autocontrast: bool = True,
+    quantize: bool = False,
 ) -> bytes:
-    """Full pipeline: raw image bytes -> 400x600 Spectra-6 PNG bytes.
+    """Full pipeline: raw image bytes -> 400x600 PNG bytes for the device.
+
+    By default this returns a smooth 24-bit RGB PNG and lets the panel do the
+    single RGB->Spectra-6 conversion/dithering on-device (avoids the previous
+    double-dithering: server Floyd-Steinberg + panel ordered dither). Pass
+    ``quantize=True`` to fall back to a server-side palette PNG (``dither``
+    then selects Floyd-Steinberg vs. nearest-color).
 
     ``enhance`` applies the e-ink pre-lighten step (for photos). It is left off
     for HTML/text content, which is already clean black-on-white/color.
@@ -155,9 +162,13 @@ def png_bytes_to_display_png(
     fitted = fit_to_target(img, mode=fit_mode, background=background)
     if enhance:
         fitted = enhance_for_eink(fitted, gamma=gamma, autocontrast=autocontrast)
-    quantized = quantize_to_palette(fitted, dither=dither)
     out = io.BytesIO()
-    quantized.save(out, format="PNG", optimize=True)
+    if quantize:
+        quantize_to_palette(fitted, dither=dither).save(
+            out, format="PNG", optimize=True
+        )
+    else:
+        fitted.convert("RGB").save(out, format="PNG", optimize=True)
     return out.getvalue()
 
 

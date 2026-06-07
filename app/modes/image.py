@@ -11,6 +11,8 @@ class ImageMode(Mode):
     name = "image"
     description = "Display images sent by the user."
     periodic = False
+    #: Photos are continuous-tone: let the device dither them.
+    epd_mode = "quality"
 
     async def generate(self, ctx: ModeContext) -> Optional[ContentItem]:
         return ContentItem(

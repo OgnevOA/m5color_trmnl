@@ -54,10 +54,15 @@ class Mode(abc.ABC):
     #:   * periodic=False -> "static" mode: it shows user-supplied content and
     #:     holds the display until changed manually (plain_text, image).
     periodic: bool = True
-    #: E-paper refresh waveform hint sent to the device on a ``draw``. "quality"
-    #: is the full color/grayscale refresh; "text" is the shorter waveform used
-    #: for monochrome-ish content (plain text, QR, line art) to save battery.
-    epd_mode: str = "quality"
+    #: Device-side dithering hint sent on a ``draw``. The panel always does the
+    #: single RGB->Spectra-6 conversion itself (the server now sends smooth RGB),
+    #: so this only selects *how*:
+    #:   * "fastest" -> nearest-color, no dithering. Best for flat/text content
+    #:     (quotes, plain text, QR, line art, weather cards): crisp edges, no
+    #:     speckle. This is the default since most modes are flat cards.
+    #:   * "quality" -> ordered dithering for continuous-tone images (photos,
+    #:     album art) so gradients don't band.
+    epd_mode: str = "fastest"
 
     @abc.abstractmethod
     async def generate(self, ctx: ModeContext) -> Optional[ContentItem]:

@@ -16,7 +16,6 @@ class QrCodeMode(Mode):
     name = "qr"
     description = "Render text/URL sent with a 'qr:' prefix as a QR code."
     periodic = False
-    epd_mode = "text"
 
     async def generate(self, ctx: ModeContext) -> Optional[ContentItem]:
         # Nothing to auto-generate; content comes from "qr: ..." messages.

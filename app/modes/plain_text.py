@@ -11,7 +11,6 @@ class PlainTextMode(Mode):
     name = "plain_text"
     description = "Display plain text sent by the user."
     periodic = False
-    epd_mode = "text"
 
     async def generate(self, ctx: ModeContext) -> Optional[ContentItem]:
         # Nothing to auto-generate; this mode renders user-provided text.
