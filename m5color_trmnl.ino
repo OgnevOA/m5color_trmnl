@@ -71,7 +71,7 @@
 // the sketch itself can be shared without leaking credentials.
 #include "secrets.h"
 
-static const char *FIRMWARE_VERSION = "0.4.0";
+static const char *FIRMWARE_VERSION = "0.4.1";
 
 // ===========================================================================
 // Tunables
@@ -168,7 +168,14 @@ static void initPowerAndLed() {
   if (g_pm1_ready) {
     g_pm1.setLdoEnable(true);  // power the RGB LED rail
     uint8_t src = 0;
-    if (g_pm1.getWakeSource(&src, M5PM1_CLEAN_ONCE) == M5PM1_OK) g_wake_src = src;
+    if (g_pm1.getWakeSource(&src, M5PM1_CLEAN_ONCE) == M5PM1_OK) {
+      g_wake_src = src;
+      // Raw mask aids debugging: bit set for a timer wake confirms the PM1 RTC
+      // (not just the ESP) brought the board back, i.e. a true power-off.
+      LOGF("[power] PM1 wake-source mask: 0x%02X\n", src);
+    }
+  } else {
+    LOGLN("[power] PM1 begin FAILED; LED + native power-off unavailable");
   }
   g_pixels.begin();
   g_pixels.setBrightness(LED_BRIGHTNESS);
@@ -677,16 +684,20 @@ static void enterDeepSleep(uint64_t seconds) {
   LOGLN("[sleep] powering off (M5PM1 RTC wake)");
   Serial.flush();
 
-  // RTC-backed full power-off: the board drops to ~92 uA and the M5PM1 RTC
-  // powers it back on after `seconds`, cold-booting the SoC (setup() reruns).
-  M5.Power.timerSleep((int)seconds);
-
-  // Fallbacks if timerSleep returns (e.g. while on USB power it may not power
-  // off): try the M5PM1 native power-off, then a plain ESP timer deep sleep.
+  // Primary: native M5PM1 full power-off. timerSet arms the PM1 RTC to power the
+  // board back ON after `seconds`, then shutdown() cuts all rails (~92 uA). This
+  // cold-boots the SoC (setup() reruns) and the PM1 reports a TIM wake next boot.
+  // (On-device data showed M5.Power.timerSleep() only does ESP deep sleep here
+  // (~10 mA, wake_reason "unknown"), so the PM1 path is now primary.)
   if (g_pm1_ready) {
     g_pm1.timerSet((uint32_t)seconds, M5PM1_TIM_ACTION_POWERON);
     g_pm1.shutdown();
+    delay(200);  // give the PMIC time to cut power before falling through
   }
+
+  // Fallbacks if the PM1 power-off does not take (e.g. while on USB power):
+  // M5Unified's timerSleep, then a plain ESP timer deep sleep.
+  M5.Power.timerSleep((int)seconds);
   esp_sleep_enable_timer_wakeup(seconds * 1000000ULL);
   esp_deep_sleep_start();
 }
