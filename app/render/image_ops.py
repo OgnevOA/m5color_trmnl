@@ -109,25 +109,6 @@ def fit_to_target(
     return canvas
 
 
-def enhance_for_eink(
-    img: Image.Image, gamma: float = 0.75, autocontrast: bool = True
-) -> Image.Image:
-    """Pre-lighten a photo so it doesn't read dark on the Spectra-6 palette.
-
-    The palette has no neutral grays, so midtones snap onto dark inks. A gamma
-    lift (``gamma`` < 1 brightens) plus an optional per-channel autocontrast
-    pull the image into a lighter, punchier range before quantization.
-    """
-    rgb = img.convert("RGB")
-    if autocontrast:
-        rgb = ImageOps.autocontrast(rgb, cutoff=1)
-    if gamma and gamma != 1.0:
-        lut = [round(((i / 255.0) ** gamma) * 255.0) for i in range(256)]
-        lut = [min(255, max(0, v)) for v in lut]
-        rgb = rgb.point(lut * 3)
-    return rgb
-
-
 def quantize_to_palette(img: Image.Image, dither: bool = True) -> Image.Image:
     """Map an RGB image onto the Spectra-6 palette with optional dithering."""
     rgb = img.convert("RGB")
@@ -141,9 +122,6 @@ def png_bytes_to_display_png(
     background: tuple[int, int, int] = (255, 255, 255),
     dither: bool = True,
     auto_rotate: bool = True,
-    enhance: bool = False,
-    gamma: float = 0.75,
-    autocontrast: bool = True,
     quantize: bool = False,
 ) -> bytes:
     """Full pipeline: raw image bytes -> 400x600 PNG bytes for the device.
@@ -153,15 +131,10 @@ def png_bytes_to_display_png(
     double-dithering: server Floyd-Steinberg + panel ordered dither). Pass
     ``quantize=True`` to fall back to a server-side palette PNG (``dither``
     then selects Floyd-Steinberg vs. nearest-color).
-
-    ``enhance`` applies the e-ink pre-lighten step (for photos). It is left off
-    for HTML/text content, which is already clean black-on-white/color.
     """
     img = Image.open(io.BytesIO(data))
     img = auto_orient(img, auto_rotate=auto_rotate)
     fitted = fit_to_target(img, mode=fit_mode, background=background)
-    if enhance:
-        fitted = enhance_for_eink(fitted, gamma=gamma, autocontrast=autocontrast)
     out = io.BytesIO()
     if quantize:
         quantize_to_palette(fitted, dither=dither).save(

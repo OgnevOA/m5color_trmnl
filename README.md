@@ -38,6 +38,10 @@ Key principles:
   beyond simple offline fallbacks.
 - **The headless browser never runs during a device request.** All rendering
   is done ahead of time by the background worker.
+- **The server sends smooth RGB; the panel does the color conversion.** Images
+  are rendered/sent as full-color PNGs and the device maps them to its Spectra-6
+  palette once (dithering photos, nearest-color for flat text/cards), avoiding
+  the muddy double-dithering of quantizing on both sides.
 - **Night mode is handled server-side** (default 23:00-06:30 Asia/Jerusalem):
   the device is told to sleep through the night.
 - **Images are pre-rendered and cached** on the `/data` volume.
@@ -54,7 +58,7 @@ app/
   queue_service.py     Queue + rendered-image bookkeeping
   services.py          Shared service layer (API + bot + worker)
   render/
-    image_ops.py       Fit to 400x600 + Spectra-6 dithering (Pillow)
+    image_ops.py       Fit to 400x600 + smooth RGB output (device dithers)
     browser.py         Playwright/Chromium HTML -> PNG
     templates.py       Jinja2 HTML rendering
     templates/         HTML/CSS templates

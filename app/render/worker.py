@@ -128,14 +128,9 @@ class PreRenderWorker:
         if not item.source_path or not Path(item.source_path).exists():
             raise FileNotFoundError(f"source image missing: {item.source_path}")
         data = Path(item.source_path).read_bytes()
-        # Photos: pre-lighten so they don't look dark on the Spectra-6 palette.
-        return image_ops.png_bytes_to_display_png(
-            data,
-            fit_mode="cover",
-            enhance=True,
-            gamma=self._settings.eink_gamma,
-            autocontrast=self._settings.eink_autocontrast,
-        )
+        # Send the photo as smooth RGB; the device dithers it to the panel
+        # palette. No server-side tone adjustment is applied.
+        return image_ops.png_bytes_to_display_png(data, fit_mode="cover")
 
     async def _render_html_item(self, item: QueueItem) -> bytes:
         if item.kind == QueueItemKind.html and item.html_content:

@@ -76,13 +76,6 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
-    # Image rendering for e-ink. Photos tend to look dark on the Spectra-6
-    # palette, so they are pre-lightened before quantization:
-    #   * eink_gamma < 1.0 brightens midtones (1.0 = off).
-    #   * eink_autocontrast stretches the tonal range (per-channel).
-    eink_gamma: float = 0.75
-    eink_autocontrast: bool = True
-
     # Weather mode (OpenWeatherMap). The "weather" mode is disabled gracefully
     # (shows a hint) until openweather_api_key is set.
     openweather_api_key: str = ""
