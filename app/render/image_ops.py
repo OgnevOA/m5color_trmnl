@@ -10,11 +10,30 @@ import io
 from pathlib import Path
 from typing import Literal
 
+import epaper_dithering as epd
 from PIL import Image, ImageOps
 
 TARGET_WIDTH = 400
 TARGET_HEIGHT = 600
 TARGET_SIZE = (TARGET_WIDTH, TARGET_HEIGHT)
+
+# M5GFX Panel_ED2208 native palette (RGB888), copied verbatim from the panel's
+# `epd_palette` table. Dithering server-side to *exactly* these values makes the
+# device's on-panel nearest-color pass (epd_fastest) a no-op, so the server has
+# full, deterministic control over the dithering (one high-quality gamma-aware
+# error-diffusion pass instead of the panel's coarse ordered/bayer dither).
+DEVICE_PALETTE: dict[str, tuple[int, int, int]] = {
+    "black": (0, 0, 0),
+    "white": (255, 255, 255),
+    "yellow": (255, 243, 56),
+    "red": (191, 0, 0),
+    "blue": (100, 64, 255),
+    "green": (67, 138, 28),
+}
+
+_DEVICE_COLOR_PALETTE = epd.ColorPalette(
+    colors=DEVICE_PALETTE, accent="red", scheme=epd.ColorScheme.BWGBRY
+)
 
 # Spectra 6 limited color palette: black, white, red, yellow, blue, green.
 # Values are tuned a bit lighter/closer to the panel's actual ink colors so
@@ -142,6 +161,35 @@ def png_bytes_to_display_png(
         )
     else:
         fitted.convert("RGB").save(out, format="PNG", optimize=True)
+    return out.getvalue()
+
+
+def dither_to_device_png(
+    data: bytes,
+    fit_mode: FitMode = "cover",
+    background: tuple[int, int, int] = (255, 255, 255),
+    auto_rotate: bool = True,
+    mode: epd.DitherMode = epd.DitherMode.FLOYD_STEINBERG,
+) -> bytes:
+    """Pipeline for continuous-tone photos: raw bytes -> dithered 400x600 PNG.
+
+    Runs a single gamma-aware (linear-light + OKLab) error-diffusion pass that
+    targets the device's exact native palette (:data:`DEVICE_PALETTE`). The
+    result is a palette ("P") PNG whose colors are byte-identical to the panel's
+    inks, so the device should draw it with ``epd_fastest`` (nearest-color, no
+    on-panel dither) to avoid a second, coarser dithering pass.
+    """
+    img = Image.open(io.BytesIO(data))
+    img = auto_orient(img, auto_rotate=auto_rotate)
+    fitted = fit_to_target(img, mode=fit_mode, background=background)
+    dithered = epd.dither_image(
+        fitted,
+        _DEVICE_COLOR_PALETTE,
+        mode=mode,
+        serpentine=True,
+    )
+    out = io.BytesIO()
+    dithered.save(out, format="PNG", optimize=True)
     return out.getvalue()
 
 

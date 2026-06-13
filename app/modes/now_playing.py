@@ -26,8 +26,9 @@ class NowPlayingMode(Mode):
     name = "now_playing"
     description = "Poster of whatever is playing in the living room."
     periodic = True
-    #: Cover art is continuous-tone: let the device dither it.
-    epd_mode = "quality"
+    #: Cover art is dithered server-side to the exact panel palette, so the
+    #: device just packs it nearest-color (no second on-panel dither).
+    epd_mode = "fastest"
 
     async def generate(self, ctx: ModeContext) -> Optional[ContentItem]:
         cfg = ctx.settings

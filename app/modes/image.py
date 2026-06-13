@@ -11,8 +11,9 @@ class ImageMode(Mode):
     name = "image"
     description = "Display images sent by the user."
     periodic = False
-    #: Photos are continuous-tone: let the device dither them.
-    epd_mode = "quality"
+    #: Photos are dithered server-side to the exact panel palette, so the
+    #: device just packs them nearest-color (no second on-panel dither).
+    epd_mode = "fastest"
 
     async def generate(self, ctx: ModeContext) -> Optional[ContentItem]:
         return ContentItem(

@@ -128,9 +128,10 @@ class PreRenderWorker:
         if not item.source_path or not Path(item.source_path).exists():
             raise FileNotFoundError(f"source image missing: {item.source_path}")
         data = Path(item.source_path).read_bytes()
-        # Send the photo as smooth RGB; the device dithers it to the panel
-        # palette. No server-side tone adjustment is applied.
-        return image_ops.png_bytes_to_display_png(data, fit_mode="cover")
+        # Photos are continuous-tone: dither server-side (gamma-aware FS) to the
+        # device's exact native palette so the panel draws it 1:1 with
+        # epd_fastest (no second, coarser on-panel dither).
+        return image_ops.dither_to_device_png(data, fit_mode="cover")
 
     async def _render_html_item(self, item: QueueItem) -> bytes:
         if item.kind == QueueItemKind.html and item.html_content:
