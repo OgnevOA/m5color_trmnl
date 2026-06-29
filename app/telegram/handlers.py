@@ -82,7 +82,7 @@ MODE_LABELS = {
     "random_office_quote": "The Office",
     "random_scrubs_quote": "Scrubs",
     "random_xkcd": "XKCD",
-    "art_institute": "Art Institute",
+    "met_museum": "Met Museum",
 }
 
 INTERVAL_CHOICES = [15, 30, 60, 120, 240]

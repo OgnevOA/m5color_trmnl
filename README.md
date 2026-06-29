@@ -201,7 +201,7 @@ Sending a plain text message displays that text. Sending a photo displays the
 image (cropped/resized to 400x600).
 
 Built-in modes: `plain_text`, `image`, `random_friends_quote`, `random_xkcd`,
-`art_institute` (random public-domain artwork from the Art Institute of Chicago)
+`met_museum` (random public-domain artwork from the Metropolitan Museum of Art)
 (plus a placeholder for unknown modes). The mode interface in
 `app/modes/base.py` makes adding new modes (weather, calendar, now_playing,
 ...) straightforward.
