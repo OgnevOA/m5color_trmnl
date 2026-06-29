@@ -118,6 +118,7 @@ class PreRenderWorker:
                     item.device_id,
                     keep=self._settings.keep_rendered_images,
                 )
+                await queue_service.prune_source_files(self._db, item.device_id)
             except Exception:
                 logger.exception("prune after render failed for %s", item.device_id)
         except Exception as exc:

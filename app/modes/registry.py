@@ -6,6 +6,7 @@ implementing :class:`~app.modes.base.Mode` and registering it here.
 
 from __future__ import annotations
 
+from .art_institute import ArtInstituteMode
 from .base import Mode
 from .image import ImageMode
 from .now_playing import NowPlayingMode
@@ -28,6 +29,7 @@ _MODE_CLASSES: dict[str, type[Mode]] = {
     RandomOfficeQuoteMode.name: RandomOfficeQuoteMode,
     RandomScrubsQuoteMode.name: RandomScrubsQuoteMode,
     RandomXkcdMode.name: RandomXkcdMode,
+    ArtInstituteMode.name: ArtInstituteMode,
 }
 
 DEFAULT_MODE = PlainTextMode.name

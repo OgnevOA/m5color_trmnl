@@ -280,6 +280,39 @@ async def prune_rendered_images(
     return deleted
 
 
+async def prune_source_files(db: Database, device_id: str) -> int:
+    """Delete on-disk source/upload files for already-processed queue items.
+
+    Source images (Telegram uploads and periodic-mode downloads in
+    ``data_dir/uploads``) are only needed to produce the rendered PNG. Once an
+    item leaves ``pending`` (rendered, displayed, skipped or failed) its source
+    file is dead weight, so we delete it and clear ``source_path`` so it is not
+    revisited. Sources of still-``pending`` items are kept -- the worker still
+    needs them to render. Returns the number of files deleted.
+    """
+    rows = await db.fetchall(
+        """SELECT id, source_path FROM queue_items
+           WHERE device_id = ? AND source_path IS NOT NULL
+             AND status != 'pending'""",
+        (device_id,),
+    )
+    deleted = 0
+    for row in rows:
+        path = row["source_path"]
+        if path:
+            try:
+                Path(path).unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning("could not delete source %s: %s", path, exc)
+        await db.execute(
+            "UPDATE queue_items SET source_path = NULL WHERE id = ?", (row["id"],)
+        )
+        deleted += 1
+    if deleted:
+        logger.info("Pruned %d source file(s) for %s", deleted, device_id)
+    return deleted
+
+
 async def clear_pending(db: Database, device_id: str) -> int:
     rows = await db.fetchall(
         "SELECT id FROM queue_items WHERE device_id = ? AND status IN ('pending','ready')",

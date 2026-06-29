@@ -83,6 +83,14 @@ class Settings(BaseSettings):
     weather_units: str = "metric"
     weather_lang: str = "en"
 
+    # Art Institute of Chicago mode (no API key required). aic_search_query is an
+    # optional full-text filter; blank means "random across the whole
+    # public-domain collection" (set e.g. "monet" or "ukiyo-e" to curate).
+    # aic_iiif_width is the IIIF image width segment (843 is AIC's recommended,
+    # well-cached size; the image is fit/cropped to the panel downstream).
+    aic_search_query: str = ""
+    aic_iiif_width: int = 843
+
     # Home Assistant presence gate. When configured, the device holds its current
     # image (noop) while nobody is home. The gate is active purely based on
     # configuration: if the URL or token (or entity list) is blank it is skipped
