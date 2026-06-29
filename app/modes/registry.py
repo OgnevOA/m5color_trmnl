@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from .base import Mode
 from .image import ImageMode
-from .met_museum import MetMuseumMode
 from .now_playing import NowPlayingMode
 from .placeholder_unknown import PlaceholderUnknownMode
 from .plain_text import PlainTextMode
@@ -17,6 +16,7 @@ from .random_friends_quote import RandomFriendsQuoteMode
 from .random_office_quote import RandomOfficeQuoteMode
 from .random_scrubs_quote import RandomScrubsQuoteMode
 from .random_xkcd import RandomXkcdMode
+from .van_gogh import VanGoghMode
 from .weather import WeatherMode
 
 _MODE_CLASSES: dict[str, type[Mode]] = {
@@ -29,7 +29,7 @@ _MODE_CLASSES: dict[str, type[Mode]] = {
     RandomOfficeQuoteMode.name: RandomOfficeQuoteMode,
     RandomScrubsQuoteMode.name: RandomScrubsQuoteMode,
     RandomXkcdMode.name: RandomXkcdMode,
-    MetMuseumMode.name: MetMuseumMode,
+    VanGoghMode.name: VanGoghMode,
 }
 
 DEFAULT_MODE = PlainTextMode.name
