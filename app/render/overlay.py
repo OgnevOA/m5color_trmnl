@@ -35,6 +35,12 @@ OVERLAY_FRAC = 0.30
 CAL_FRAC = 0.46
 #: Perceptual-luminance threshold (0-255): brighter regions get dark text.
 _LUMA_THRESHOLD = 140.0
+#: Adaptive scrim opacity range. The scrim (peak alpha at the bottom of the
+#: band) scales with how close the region is to the mid-luminance boundary: an
+#: already very dark/bright patch needs almost none (``_SCRIM_MIN``), a risky
+#: mid-tone patch gets the full ``_SCRIM_MAX``.
+_SCRIM_MIN = 0.12
+_SCRIM_MAX = 0.72
 
 #: Sunday-first weekday headers (matches ``firstweekday=6`` below).
 _WEEKHEAD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -73,34 +79,55 @@ def build_calendar(now: datetime) -> dict:
     }
 
 
-def _region_theme(img: Image.Image, box: tuple[int, int, int, int]) -> str:
-    """Return ``"light"`` (white text) or ``"dark"`` (black text) for a crop.
-
-    A bright region needs dark text; a dark region needs light text.
-    """
+def _mean_luma(img: Image.Image, box: tuple[int, int, int, int]) -> float:
+    """Mean perceptual luminance (0-255) of a crop, or mid-grey if empty."""
     region = img.crop(box)
     if region.width == 0 or region.height == 0:
-        return "light"
+        return 128.0
     # Downsample first: the mean is all we need and 24x24 is plenty.
     small = region.convert("RGB").resize((24, 24), Image.BILINEAR)
     arr = np.asarray(small, dtype=np.float32)
     luma = 0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2]
-    return "dark" if float(luma.mean()) > _LUMA_THRESHOLD else "light"
+    return float(luma.mean())
 
 
-def choose_block_themes(fitted: Image.Image) -> tuple[str, str]:
-    """Pick per-block text color from the luminance behind each block.
+def _block_style(img: Image.Image, box: tuple[int, int, int, int]) -> tuple[str, float]:
+    """Return ``(theme, scrim_opacity)`` for a region.
+
+    ``theme`` is ``"light"`` (white text over a dark scrim) for a dark region
+    and ``"dark"`` (black text over a light scrim) for a bright one. The scrim
+    opacity scales with how close the region is to the mid-luminance boundary:
+    ~0 at the extremes (text already legible), max near mid-tone.
+    """
+    luma = _mean_luma(img, box)
+    if luma > _LUMA_THRESHOLD:
+        theme = "dark"
+        # 0 at pure white, 1 at the threshold.
+        t = (255.0 - luma) / max(1.0, 255.0 - _LUMA_THRESHOLD)
+    else:
+        theme = "light"
+        # 0 at pure black, 1 at the threshold.
+        t = luma / _LUMA_THRESHOLD
+    t = max(0.0, min(1.0, t))
+    scrim = round(_SCRIM_MIN + (_SCRIM_MAX - _SCRIM_MIN) * t, 3)
+    return theme, scrim
+
+
+def choose_block_styles(
+    fitted: Image.Image,
+) -> tuple[tuple[str, float], tuple[str, float]]:
+    """Pick per-block ``(theme, scrim)`` from the luminance behind each block.
 
     Samples the calendar and caption/weather sub-regions of the band separately,
     so a picture that is dark on one side and bright on the other stays legible
-    on both. Returns ``(cal_theme, info_theme)``.
+    on both. Returns ``((cal_theme, cal_scrim), (info_theme, info_scrim))``.
     """
     w, h = fitted.size
     top = int(h * (1.0 - OVERLAY_FRAC))
     split = int(w * CAL_FRAC)
-    cal_theme = _region_theme(fitted, (0, top, split, h))
-    info_theme = _region_theme(fitted, (split, top, w, h))
-    return cal_theme, info_theme
+    cal = _block_style(fitted, (0, top, split, h))
+    info = _block_style(fitted, (split, top, w, h))
+    return cal, info
 
 
 async def get_weather_summary(http, settings) -> Optional[dict]:
@@ -122,10 +149,14 @@ def build_context(
     caption_title: Optional[str],
     caption_artist: Optional[str],
     weather: Optional[dict],
-    cal_theme: str,
-    info_theme: str,
+    cal_style: tuple[str, float],
+    info_style: tuple[str, float],
 ) -> dict:
-    """Assemble the full template context for :func:`render_overlay_html`."""
+    """Assemble the full template context for :func:`render_overlay_html`.
+
+    ``cal_style`` / ``info_style`` are the ``(theme, scrim_opacity)`` pairs from
+    :func:`choose_block_styles`.
+    """
     ctx = build_calendar(now)
     ctx.update(
         {
@@ -133,8 +164,10 @@ def build_context(
             "caption_title": caption_title,
             "caption_artist": caption_artist,
             "weather": weather,
-            "cal_theme": cal_theme,
-            "info_theme": info_theme,
+            "cal_theme": cal_style[0],
+            "cal_scrim": cal_style[1],
+            "info_theme": info_style[0],
+            "info_scrim": info_style[1],
             "overlay_pct": round(OVERLAY_FRAC * 100),
             "cal_pct": round(CAL_FRAC * 100),
         }

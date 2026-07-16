@@ -13,7 +13,7 @@
   <body>
     <div class="bg" style="background-image: url('{{ bg_uri }}');"></div>
     <div class="overlay">
-      <div class="block cal theme-{{ cal_theme }}">
+      <div class="block cal theme-{{ cal_theme }}" style="--scrim: {{ cal_scrim }};">
         <div class="cal-month">{{ month_label }}</div>
         <table class="cal-grid">
           <thead>
@@ -39,7 +39,7 @@
         {% endif %}
       </div>
 
-      <div class="block info theme-{{ info_theme }}">
+      <div class="block info theme-{{ info_theme }}" style="--scrim: {{ info_scrim }};">
         <div class="date">{{ date_str }}</div>
 
         {% if caption_title %}

@@ -1,8 +1,11 @@
 /* Content-aware info overlay laid over full-bleed artwork. Sizes use viewport
    units so the same layout scales across the M5 (400x600) and E1004
-   (1200x1600) panels. No background scrim: legibility comes from picking
-   black/white text per block (from the luminance behind it) plus a thin hard
-   (no-blur) outline in the opposite color, which stays crisp after dithering. */
+   (1200x1600) panels. Legibility comes from three layers: black/white text
+   picked per block (from the luminance behind it), a thin hard (no-blur)
+   outline in the opposite color, and an adaptive bottom-anchored scrim whose
+   peak opacity (--scrim, set per block) scales with how close the region is to
+   the mid-luminance boundary -- strong for risky mid-tones, near-zero for
+   already very dark/bright patches. */
 
 * {
   margin: 0;
@@ -56,13 +59,22 @@ body {
   min-width: 0;
 }
 
-/* Themes: light = white text (dark artwork behind), dark = black text (bright
-   artwork behind). A thin outline in the opposite color keeps text readable
-   with no background scrim. --box/--ink drive the inverted "today" chip. */
+/* Themes: light = white text (dark artwork behind) over a dark scrim, dark =
+   black text (bright artwork behind) over a light scrim. The scrim is a
+   bottom-anchored gradient; its peak alpha is --scrim (set inline per block)
+   and the upper stops are fractions of it so it fades out toward the artwork.
+   --box/--ink drive the inverted "today" chip. */
 .theme-light {
   color: #ffffff;
   --box: #ffffff;
   --ink: #000000;
+  --scrim-rgb: 0, 0, 0;
+  background: linear-gradient(
+    to top,
+    rgba(var(--scrim-rgb), var(--scrim, 0.4)) 0%,
+    rgba(var(--scrim-rgb), calc(var(--scrim, 0.4) * 0.6)) 66%,
+    rgba(var(--scrim-rgb), calc(var(--scrim, 0.4) * 0.18)) 100%
+  );
   text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000,
     1px 1px 0 #000;
 }
@@ -71,6 +83,13 @@ body {
   color: #000000;
   --box: #000000;
   --ink: #ffffff;
+  --scrim-rgb: 255, 255, 255;
+  background: linear-gradient(
+    to top,
+    rgba(var(--scrim-rgb), var(--scrim, 0.4)) 0%,
+    rgba(var(--scrim-rgb), calc(var(--scrim, 0.4) * 0.6)) 66%,
+    rgba(var(--scrim-rgb), calc(var(--scrim, 0.4) * 0.18)) 100%
+  );
   text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff,
     1px 1px 0 #fff;
 }

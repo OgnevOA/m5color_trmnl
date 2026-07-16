@@ -200,7 +200,7 @@ class PreRenderWorker:
         size = self._device_size()
         fitted = overlay.fit_background(data, size)
         bg_uri = overlay.image_to_data_uri(fitted)
-        cal_theme, info_theme = overlay.choose_block_themes(fitted)
+        cal_style, info_style = overlay.choose_block_styles(fitted)
 
         weather = None
         if self._http is not None:
@@ -209,7 +209,7 @@ class PreRenderWorker:
         title, artist = self._caption_for(item)
         now = datetime.now(ZoneInfo(self._settings.timezone))
         context = overlay.build_context(
-            now, title, artist, weather, cal_theme, info_theme
+            now, title, artist, weather, cal_style, info_style
         )
         html = render_overlay_html(bg_uri=bg_uri, **context)
         screenshot = await self._renderer.render_html(

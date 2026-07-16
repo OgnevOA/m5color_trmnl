@@ -256,11 +256,13 @@ portrait-first public-domain painting by that artist via Wikidata/Commons)
 Toggle a content-aware info overlay on image/photo frames with `/overlay on`
 (off by default, per device). When on, the pre-render worker draws the artwork
 full-bleed and lays a compact band across the lower ~30% of the display: a
-mini month calendar (today highlighted) on one side, and the date, an artwork
-caption (title / artist / year, for the artist modes) and current weather on
-the other. There is no background scrim: each block samples the luminance of the
-artwork behind it and picks black or white text (with a thin outline in the
-opposite color) so it stays legible over any picture. Weather reuses
+mini month calendar (today highlighted) with current weather beneath it on one
+side, and the date plus an artwork caption (title / artist / year, for the
+artist modes) on the other. Each block samples the luminance of the artwork behind it and picks
+black or white text (with a thin outline in the opposite color) over an adaptive
+bottom-anchored scrim whose opacity scales with the region's luminance — strong
+for risky mid-tones, near-zero for already very dark or bright patches — so it
+stays legible over any picture without dulling the artwork. Weather reuses
 the OpenWeather config (shown only when `OPENWEATHER_API_KEY` is set). Since
 e-ink only repaints on wake, the date/weather reflect the last refresh, not live
 time. Text cards (quotes, QR, weather, plain text) are unaffected.
