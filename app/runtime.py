@@ -80,7 +80,9 @@ async def _start_stack(
     rt = DeviceRuntime(settings=settings, db=db, services=services)
 
     if run_worker and renderer is not None:
-        worker = PreRenderWorker(db=db, settings=settings, renderer=renderer)
+        worker = PreRenderWorker(
+            db=db, settings=settings, renderer=renderer, http=http
+        )
         worker.start()
         services.attach_worker(worker)
         rt.worker = worker

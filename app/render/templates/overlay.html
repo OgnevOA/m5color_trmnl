@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      {{ overlay_css | safe }}
+      :root {
+        --overlay-h: {{ overlay_pct }}%;
+        --cal-w: {{ cal_pct }}%;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bg" style="background-image: url('{{ bg_uri }}');"></div>
+    <div class="overlay">
+      <div class="block cal theme-{{ cal_theme }}">
+        <div class="cal-month">{{ month_label }}</div>
+        <table class="cal-grid">
+          <thead>
+            <tr>
+              {% for d in weekhead %}<th>{{ d }}</th>{% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for week in weeks %}
+            <tr>
+              {% for cell in week %}
+              <td class="{{ 'today' if cell.today else '' }}">{{ cell.day if cell.day else '' }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="block info theme-{{ info_theme }}">
+        <div class="info-top">
+          <span class="date">{{ date_str }}</span>
+          {% if weather %}
+          <span class="wx">
+            <span class="wx-temp">{{ weather.temp }}{{ weather.unit }}</span>
+            {% if weather.condition %}<span class="wx-cond">{{ weather.condition }}</span>{% endif %}
+          </span>
+          {% endif %}
+        </div>
+
+        {% if caption_title %}
+        <div class="caption">
+          <div class="c-title">{{ caption_title }}</div>
+          {% if caption_artist %}<div class="c-artist">{{ caption_artist }}</div>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </body>
+</html>

@@ -58,10 +58,22 @@ _THUMB_WIDTH = 1200
 #: prone, so cache the SPARQL file list per QID and refresh it at most weekly
 #: (stale results are served if a later refresh fails). Module-level because the
 #: worker creates a fresh mode instance per refill; keyed by QID so every artist
-#: mode has its own cached list.
+#: mode has its own cached list. The cached value is
+#: ``(fetched_at, filenames, {normalized_filename: year})``.
 _CACHE_TTL = 7 * 24 * 3600
-_files_cache: dict[str, tuple[float, list[str]]] = {}
+_files_cache: dict[str, tuple[float, list[str], dict[str, int]]] = {}
 _cache_lock = asyncio.Lock()
+
+
+def _normalize_filename(name: str) -> str:
+    """Commons normalizes underscores to spaces in page titles; match that."""
+    return name.replace("_", " ")
+
+
+def _parse_year(value: str) -> Optional[int]:
+    """Extract a 3-4 digit (CE) year from a Wikidata time literal, if any."""
+    match = re.match(r"\+?(\d{3,4})-", value or "")
+    return int(match.group(1)) if match else None
 
 
 class ArtistMode(Mode):
@@ -82,12 +94,12 @@ class ArtistMode(Mode):
 
     async def generate(self, ctx: ModeContext) -> Optional[ContentItem]:
         try:
-            files = await self._artist_image_files(ctx, self.artist_qid)
+            files, years = await self._artist_image_files(ctx, self.artist_qid)
             if not files:
                 raise ValueError("no works with images for artist")
 
             random.shuffle(files)
-            info = await self._resolve_batch(ctx, files[:_BATCH])
+            info = await self._resolve_batch(ctx, files[:_BATCH], years)
             if not info:
                 raise ValueError("no resolvable images in batch")
 
@@ -111,8 +123,10 @@ class ArtistMode(Mode):
                 text="Could not fetch artwork right now.",
             )
 
-    async def _artist_image_files(self, ctx: ModeContext, qid: str) -> list[str]:
-        """Commons file names for the artist's works, cached per QID (weekly).
+    async def _artist_image_files(
+        self, ctx: ModeContext, qid: str
+    ) -> tuple[list[str], dict[str, int]]:
+        """Commons file names + a ``{filename: year}`` map, cached per QID (weekly).
 
         On a cache miss it queries WDQS; if that fails but a stale list exists,
         the stale list is returned so a transient WDQS outage doesn't break the
@@ -120,27 +134,33 @@ class ArtistMode(Mode):
         """
         cached = _files_cache.get(qid)
         if cached and (time.time() - cached[0]) < _CACHE_TTL:
-            return cached[1]
+            return cached[1], cached[2]
 
         async with _cache_lock:
             cached = _files_cache.get(qid)  # re-check after acquiring the lock
             if cached and (time.time() - cached[0]) < _CACHE_TTL:
-                return cached[1]
+                return cached[1], cached[2]
             try:
-                files = await self._fetch_image_files(ctx, qid)
+                files, years = await self._fetch_image_files(ctx, qid)
             except Exception as exc:
                 if cached:
                     logger.warning("WDQS refresh failed (%s); serving cached list", exc)
-                    return cached[1]
+                    return cached[1], cached[2]
                 raise
             if files:
-                _files_cache[qid] = (time.time(), files)
+                _files_cache[qid] = (time.time(), files, years)
             elif cached:
-                return cached[1]
-            return files
+                return cached[1], cached[2]
+            return files, years
 
-    async def _fetch_image_files(self, ctx: ModeContext, qid: str) -> list[str]:
-        query = f"SELECT ?image WHERE {{ ?item wdt:P170 wd:{qid} ; wdt:P18 ?image . }}"
+    async def _fetch_image_files(
+        self, ctx: ModeContext, qid: str
+    ) -> tuple[list[str], dict[str, int]]:
+        query = (
+            f"SELECT ?image ?inception WHERE {{ "
+            f"?item wdt:P170 wd:{qid} ; wdt:P18 ?image . "
+            f"OPTIONAL {{ ?item wdt:P571 ?inception . }} }}"
+        )
         resp = await ctx.http.get(
             _SPARQL_URL,
             params={"query": query, "format": "json"},
@@ -149,15 +169,24 @@ class ArtistMode(Mode):
         )
         resp.raise_for_status()
         rows = resp.json().get("results", {}).get("bindings", [])
-        files = []
+        files: list[str] = []
+        seen: set[str] = set()
+        years: dict[str, int] = {}
         for row in rows:
             value = row.get("image", {}).get("value", "")
-            if _FILEPATH_MARK in value:
-                files.append(urllib.parse.unquote(value.split(_FILEPATH_MARK)[-1]))
-        return files
+            if _FILEPATH_MARK not in value:
+                continue
+            fname = urllib.parse.unquote(value.split(_FILEPATH_MARK)[-1])
+            if fname not in seen:
+                seen.add(fname)
+                files.append(fname)
+            year = _parse_year(row.get("inception", {}).get("value", ""))
+            if year is not None:
+                years.setdefault(_normalize_filename(fname), year)
+        return files, years
 
     async def _resolve_batch(
-        self, ctx: ModeContext, files: list[str]
+        self, ctx: ModeContext, files: list[str], years: dict[str, int]
     ) -> list[dict]:
         """One imageinfo call -> [{title,width,height,thumburl}, ...]."""
         titles = "|".join(f"File:{name}" for name in files)
@@ -188,10 +217,12 @@ class ArtistMode(Mode):
             if not thumb or not width or not height:
                 continue
             raw = (page.get("title") or self.artist_label).removeprefix("File:")
-            title = (
+            name = (
                 re.sub(r"\.\w+$", "", raw).replace("_", " ").strip()
                 or self.artist_label
             )
+            year = years.get(_normalize_filename(raw))
+            title = f"{name} ({year})" if year else name
             out.append(
                 {"title": title, "width": width, "height": height, "thumburl": thumb}
             )

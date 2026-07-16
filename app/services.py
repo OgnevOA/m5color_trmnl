@@ -148,6 +148,7 @@ class Services:
             mode=row["mode"],
             night_mode_enabled=bool(row["night_mode_enabled"]),
             manual_override=bool(row["manual_override"]),
+            overlay_enabled=bool(row["overlay_enabled"]),
         )
 
     async def set_interval(self, minutes: int) -> None:
@@ -218,6 +219,12 @@ class Services:
     async def set_night_mode(self, enabled: bool) -> None:
         await self.db.execute(
             "UPDATE settings SET night_mode_enabled = ? WHERE device_id = ?",
+            (1 if enabled else 0, self.settings.device_id),
+        )
+
+    async def set_overlay(self, enabled: bool) -> None:
+        await self.db.execute(
+            "UPDATE settings SET overlay_enabled = ? WHERE device_id = ?",
             (1 if enabled else 0, self.settings.device_id),
         )
 
@@ -732,6 +739,7 @@ class Services:
             night_mode_enabled=cfg.night_mode_enabled,
             is_night_now=night_now,
             manual_override=cfg.manual_override,
+            overlay_enabled=cfg.overlay_enabled,
             last_seen=last_seen,
             last_wake_reason=dev["last_wake_reason"] if dev else None,
             last_image_id=dev["last_image_id"] if dev else None,
@@ -844,7 +852,9 @@ class Services:
             return None
 
         if content.kind == ContentKind.image and content.image_bytes:
-            return await self._enqueue_mode_image(content.image_bytes, cfg.mode)
+            return await self._enqueue_mode_image(
+                content.image_bytes, cfg.mode, title=content.title
+            )
         if content.kind == ContentKind.html and content.html:
             item_id = await queue_service.add_html_item(
                 self.db,
@@ -864,7 +874,9 @@ class Services:
         self._notify_worker()
         return item_id
 
-    async def _enqueue_mode_image(self, data: bytes, mode_name: str) -> int:
+    async def _enqueue_mode_image(
+        self, data: bytes, mode_name: str, title: Optional[str] = None
+    ) -> int:
         self._uploads_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
         path = self._uploads_dir / f"{mode_name}_{ts}.png"
@@ -873,7 +885,9 @@ class Services:
             self.db,
             self.settings.device_id,
             source_path=str(path),
-            title=mode_name,
+            # Keep the content's real title (e.g. a painting name) so the overlay
+            # can caption it; fall back to the mode name when absent.
+            title=title or mode_name,
             mode_name=mode_name,
         )
         self._notify_worker()

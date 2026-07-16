@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS settings (
     mode               TEXT NOT NULL,
     night_mode_enabled INTEGER NOT NULL DEFAULT 1,
     manual_override    INTEGER NOT NULL DEFAULT 0,
+    overlay_enabled    INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (device_id) REFERENCES devices(device_id)
 );
 
@@ -135,6 +136,9 @@ class Database:
         """
         assert self._conn is not None
         additions: dict[str, dict[str, str]] = {
+            "settings": {
+                "overlay_enabled": "INTEGER",       # 0 / 1 (artwork info overlay)
+            },
             "devices": {
                 "battery_alert_state": "TEXT",      # ok / low / critical
                 "offline_alerted": "INTEGER",       # 0 / 1

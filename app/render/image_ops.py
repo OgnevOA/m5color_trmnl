@@ -99,14 +99,15 @@ def _flatten_alpha(
     return img
 
 
-def fit_to_target(
+def fit_to_size(
     img: Image.Image,
+    size: tuple[int, int],
     mode: FitMode = "cover",
     background: tuple[int, int, int] = (255, 255, 255),
 ) -> Image.Image:
-    """Resize/crop/pad an image to exactly 400x600 preserving aspect ratio.
+    """Resize/crop/pad an image to exactly ``size`` preserving aspect ratio.
 
-    ``cover``   -> center-crop to fill the whole display (no padding).
+    ``cover``   -> center-crop to fill the whole frame (no padding).
     ``contain`` -> fit inside and pad with ``background`` color.
 
     Images with alpha (transparent stickers/PNGs) are flattened onto
@@ -116,16 +117,22 @@ def fit_to_target(
     img = _flatten_alpha(img, background)
     img = img.convert("RGB")
     if mode == "cover":
-        return ImageOps.fit(img, TARGET_SIZE, method=Image.LANCZOS)
+        return ImageOps.fit(img, size, method=Image.LANCZOS)
 
-    fitted = ImageOps.contain(img, TARGET_SIZE, method=Image.LANCZOS)
-    canvas = Image.new("RGB", TARGET_SIZE, background)
-    offset = (
-        (TARGET_WIDTH - fitted.width) // 2,
-        (TARGET_HEIGHT - fitted.height) // 2,
-    )
+    fitted = ImageOps.contain(img, size, method=Image.LANCZOS)
+    canvas = Image.new("RGB", size, background)
+    offset = ((size[0] - fitted.width) // 2, (size[1] - fitted.height) // 2)
     canvas.paste(fitted, offset)
     return canvas
+
+
+def fit_to_target(
+    img: Image.Image,
+    mode: FitMode = "cover",
+    background: tuple[int, int, int] = (255, 255, 255),
+) -> Image.Image:
+    """Resize/crop/pad an image to exactly 400x600 (see :func:`fit_to_size`)."""
+    return fit_to_size(img, TARGET_SIZE, mode=mode, background=background)
 
 
 def quantize_to_palette(img: Image.Image, dither: bool = True) -> Image.Image:

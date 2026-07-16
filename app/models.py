@@ -103,6 +103,7 @@ class DeviceSettings(BaseModel):
     mode: str
     night_mode_enabled: bool = True
     manual_override: bool = False
+    overlay_enabled: bool = False
 
 
 class QueueItem(BaseModel):
@@ -141,6 +142,7 @@ class StatusSnapshot(BaseModel):
     night_mode_enabled: bool
     is_night_now: bool
     manual_override: bool
+    overlay_enabled: bool = False
     last_seen: Optional[datetime] = None
     last_wake_reason: Optional[str] = None
     last_image_id: Optional[str] = None

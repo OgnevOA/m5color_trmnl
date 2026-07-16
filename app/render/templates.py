@@ -57,6 +57,22 @@ def _weather_css() -> str:
     return (_TEMPLATES_DIR / "weather.css").read_text(encoding="utf-8")
 
 
+@lru_cache
+def _overlay_css() -> str:
+    return (_TEMPLATES_DIR / "overlay.css").read_text(encoding="utf-8")
+
+
+def render_overlay_html(bg_uri: str, **context) -> str:
+    """Render the artwork info overlay (background + calendar/caption/weather).
+
+    ``context`` is the dict built by :func:`app.render.overlay.build_context`
+    (calendar matrix, date, caption, weather summary, per-block themes and the
+    band/column percentages).
+    """
+    template = _env().get_template("overlay.html")
+    return template.render(overlay_css=_overlay_css(), bg_uri=bg_uri, **context)
+
+
 def render_text_html(
     body: str,
     title: str = "Message",

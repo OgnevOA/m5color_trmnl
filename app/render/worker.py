@@ -10,15 +10,22 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime
 from pathlib import Path
+from typing import Optional
+from zoneinfo import ZoneInfo
+
+import httpx
 
 from .. import queue_service
 from ..config import Settings
 from ..db import Database
 from ..models import QueueItem, QueueItemKind
-from . import e1004, image_ops
+from ..modes.artist import ArtistMode
+from ..modes.registry import get_mode
+from . import e1004, image_ops, overlay
 from .browser import BrowserRenderer
-from .templates import render_text_html
+from .templates import render_overlay_html, render_text_html
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +38,13 @@ class PreRenderWorker:
         db: Database,
         settings: Settings,
         renderer: BrowserRenderer,
+        http: Optional[httpx.AsyncClient] = None,
         poll_interval: float = 2.0,
     ) -> None:
         self._db = db
         self._settings = settings
         self._renderer = renderer
+        self._http = http
         self._poll_interval = poll_interval
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
@@ -98,6 +107,17 @@ class PreRenderWorker:
             return e1004.E1004_WIDTH, e1004.E1004_HEIGHT, ".bin"
         return image_ops.TARGET_WIDTH, image_ops.TARGET_HEIGHT, ".png"
 
+    def _device_size(self) -> tuple[int, int]:
+        width, height, _ = self._output_spec()
+        return width, height
+
+    async def _overlay_enabled(self) -> bool:
+        row = await self._db.fetchone(
+            "SELECT overlay_enabled FROM settings WHERE device_id = ?",
+            (self._settings.device_id,),
+        )
+        return bool(row["overlay_enabled"]) if row and row["overlay_enabled"] else False
+
     async def _render_item(self, item: QueueItem) -> None:
         try:
             t0 = time.monotonic()
@@ -140,6 +160,21 @@ class PreRenderWorker:
         if not item.source_path or not Path(item.source_path).exists():
             raise FileNotFoundError(f"source image missing: {item.source_path}")
         data = Path(item.source_path).read_bytes()
+
+        # Optional content-aware info overlay (date/calendar/caption/weather).
+        if await self._overlay_enabled():
+            try:
+                return await self._render_image_with_overlay(item, data)
+            except Exception:
+                # Never fail a frame over the overlay: fall back to the plain
+                # image so the device always has something to draw.
+                logger.exception(
+                    "overlay render failed for item %s; using plain image", item.id
+                )
+
+        return self._render_plain_image(data)
+
+    def _render_plain_image(self, data: bytes) -> bytes:
         if self._is_e1004:
             # E1004: pack directly into the driver's 4bpp GxEPD2 frame buffer.
             return e1004.render_e1004_frame(data)
@@ -147,6 +182,44 @@ class PreRenderWorker:
         # device's exact native palette so the panel draws it 1:1 with
         # epd_fastest (no second, coarser on-panel dither).
         return image_ops.dither_to_device_png(data, fit_mode="cover")
+
+    def _caption_for(self, item: QueueItem) -> tuple[Optional[str], Optional[str]]:
+        """Caption ``(title, artist)`` for the overlay, only for artist modes.
+
+        Other image sources (user photos, generic image mode) get no caption --
+        the overlay still shows the date, calendar and weather.
+        """
+        if not item.mode_name:
+            return None, None
+        mode = get_mode(item.mode_name)
+        if isinstance(mode, ArtistMode):
+            return item.title, mode.artist_label
+        return None, None
+
+    async def _render_image_with_overlay(self, item: QueueItem, data: bytes) -> bytes:
+        size = self._device_size()
+        fitted = overlay.fit_background(data, size)
+        bg_uri = overlay.image_to_data_uri(fitted)
+        cal_theme, info_theme = overlay.choose_block_themes(fitted)
+
+        weather = None
+        if self._http is not None:
+            weather = await overlay.get_weather_summary(self._http, self._settings)
+
+        title, artist = self._caption_for(item)
+        now = datetime.now(ZoneInfo(self._settings.timezone))
+        context = overlay.build_context(
+            now, title, artist, weather, cal_theme, info_theme
+        )
+        html = render_overlay_html(bg_uri=bg_uri, **context)
+        screenshot = await self._renderer.render_html(
+            html, width=size[0], height=size[1]
+        )
+        if self._is_e1004:
+            return e1004.render_e1004_frame(screenshot)
+        # The composite is mostly continuous-tone artwork: FS-dither it to the
+        # exact panel palette (text sits on a scrim and survives cleanly).
+        return image_ops.dither_to_device_png(screenshot, fit_mode="cover")
 
     async def _render_html_item(self, item: QueueItem) -> bytes:
         if item.kind == QueueItemKind.html and item.html_content:

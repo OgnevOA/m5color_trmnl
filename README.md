@@ -231,13 +231,14 @@ against that device's stack).
 | Command | Description |
 | --- | --- |
 | `/start` | Help + current status. |
-| `/status` | Mode, last update, wake reason, last image, battery, interval, night mode, queue size. |
+| `/status` | Mode, last update, wake reason, last image, battery, interval, night mode, overlay, queue size. |
 | `/interval N` | Set polling interval to N minutes. |
 | `/mode NAME` | Set the active mode. |
 | `/queue` | Show queue status. |
 | `/clear` | Clear pending queue entries. |
 | `/next` | Skip to / generate the next item for the active mode. |
 | `/night on\|off\|status` | Control night mode (window stays 23:00-06:30). |
+| `/overlay on\|off\|status` | Toggle the info overlay on artwork/photo frames (default off). |
 | `/help` | List commands. |
 
 Sending a plain text message displays that text. Sending a photo displays the
@@ -249,3 +250,16 @@ portrait-first public-domain painting by that artist via Wikidata/Commons)
 (plus a placeholder for unknown modes). The mode interface in
 `app/modes/base.py` makes adding new modes (weather, calendar, now_playing,
 ...) straightforward.
+
+### Artwork info overlay
+
+Toggle a content-aware info overlay on image/photo frames with `/overlay on`
+(off by default, per device). When on, the pre-render worker draws the artwork
+full-bleed and lays a compact band across the bottom quarter of the display: a
+mini month calendar (today highlighted) on one side, and the date, an artwork
+caption (title / artist / year, for the artist modes) and current weather on
+the other. Each block samples the luminance of the artwork behind it and flips
+between light and dark text so it stays legible over any picture. Weather reuses
+the OpenWeather config (shown only when `OPENWEATHER_API_KEY` is set). Since
+e-ink only repaints on wake, the date/weather reflect the last refresh, not live
+time. Text cards (quotes, QR, weather, plain text) are unaffected.
