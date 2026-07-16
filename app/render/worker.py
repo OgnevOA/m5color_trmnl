@@ -16,7 +16,7 @@ from .. import queue_service
 from ..config import Settings
 from ..db import Database
 from ..models import QueueItem, QueueItemKind
-from . import image_ops
+from . import e1004, image_ops
 from .browser import BrowserRenderer
 from .templates import render_text_html
 
@@ -88,18 +88,29 @@ class PreRenderWorker:
         await self._render_item(item)
         return True
 
+    @property
+    def _is_e1004(self) -> bool:
+        return self._settings.device_type == "e1004"
+
+    def _output_spec(self) -> tuple[int, int, str]:
+        """Return ``(width, height, extension)`` for this device's frames."""
+        if self._is_e1004:
+            return e1004.E1004_WIDTH, e1004.E1004_HEIGHT, ".bin"
+        return image_ops.TARGET_WIDTH, image_ops.TARGET_HEIGHT, ".png"
+
     async def _render_item(self, item: QueueItem) -> None:
         try:
             t0 = time.monotonic()
             if item.kind == QueueItemKind.image:
-                png = await self._render_image_item(item)
+                payload = await self._render_image_item(item)
             else:
-                png = await self._render_html_item(item)
+                payload = await self._render_html_item(item)
 
+            width, height, ext = self._output_spec()
             image_id = await queue_service.next_image_id(self._db)
-            path = Path(self._settings.rendered_images_dir) / f"{image_id}.png"
+            path = Path(self._settings.rendered_images_dir) / f"{image_id}{ext}"
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(png)
+            path.write_bytes(payload)
             render_ms = int((time.monotonic() - t0) * 1000)
             await queue_service.record_rendered(
                 self._db,
@@ -107,8 +118,8 @@ class PreRenderWorker:
                 queue_item_id=item.id,
                 image_id=image_id,
                 path=str(path),
-                width=image_ops.TARGET_WIDTH,
-                height=image_ops.TARGET_HEIGHT,
+                width=width,
+                height=height,
                 render_ms=render_ms,
             )
             logger.info("Rendered queue item %s -> %s", item.id, image_id)
@@ -129,6 +140,9 @@ class PreRenderWorker:
         if not item.source_path or not Path(item.source_path).exists():
             raise FileNotFoundError(f"source image missing: {item.source_path}")
         data = Path(item.source_path).read_bytes()
+        if self._is_e1004:
+            # E1004: pack directly into the driver's 4bpp GxEPD2 frame buffer.
+            return e1004.render_e1004_frame(data)
         # Photos are continuous-tone: dither server-side (gamma-aware FS) to the
         # device's exact native palette so the panel draws it 1:1 with
         # epd_fastest (no second, coarser on-panel dither).
@@ -142,6 +156,11 @@ class PreRenderWorker:
                 body=item.text_content or "",
                 title=item.title or "Message",
             )
+        if self._is_e1004:
+            screenshot = await self._renderer.render_html(
+                html, width=e1004.E1004_WIDTH, height=e1004.E1004_HEIGHT
+            )
+            return e1004.render_e1004_frame(screenshot)
         screenshot = await self._renderer.render_html(html)
         # Send the screenshot as smooth RGB; the device maps it to the panel
         # palette. Flat cards (quotes/QR/weather) use the "fastest" nearest-color

@@ -6,12 +6,22 @@ configured cleanly in Docker / docker-compose without code changes.
 
 from __future__ import annotations
 
+import logging
+import os
+import re
 from datetime import time
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+#: Matches per-device env overrides ``DEVICE_<n>_<FIELD>`` (e.g.
+#: ``DEVICE_1_DEVICE_ID``, ``DEVICE_2_TELEGRAM_BOT_TOKEN``). ``<FIELD>`` is a
+#: ``Settings`` field name; anything else is ignored with a warning.
+_DEVICE_ENV_RE = re.compile(r"^DEVICE_(\d+)_(.+)$", re.IGNORECASE)
 
 
 def _parse_hhmm(value: str) -> time:
@@ -45,6 +55,9 @@ class Settings(BaseSettings):
     # Device identity / auth
     device_id: str = "m5paper-color-01"
     device_token: str = "change-me-device-token"
+    #: Panel family driving the render pipeline: "m5" (M5 Paper Color, 400x600
+    #: PNG) or "e1004" (reTerminal E1004, 1200x1600 packed .bin frame).
+    device_type: str = "m5"
 
     # Public URL the device uses to build absolute image URLs (optional).
     public_base_url: str = "http://localhost:8000"
@@ -163,3 +176,82 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return a cached :class:`Settings` instance."""
     return Settings()
+
+
+def load_device_settings() -> list[Settings]:
+    """Return one :class:`Settings` per device stack to run in this process.
+
+    All configuration lives in the environment (``.env``). Global/shared config
+    (timezone, HTTP host/port, mode API keys, Home Assistant, etc.) comes from
+    the plain env via :func:`get_settings`. To run several independent devices
+    in one process, define ``DEVICE_<n>_<FIELD>`` env vars, where ``<FIELD>`` is
+    any :class:`Settings` field name, e.g.::
+
+        DEVICE_1_DEVICE_ID=m5paper-color-01
+        DEVICE_1_DEVICE_TYPE=m5
+        DEVICE_1_DEVICE_TOKEN=...
+        DEVICE_1_TELEGRAM_BOT_TOKEN=111:AAA
+        DEVICE_1_DATA_DIR=/data/m5
+
+        DEVICE_2_DEVICE_ID=reterminal-e1004-01
+        DEVICE_2_DEVICE_TYPE=e1004
+        DEVICE_2_DEVICE_TOKEN=...
+        DEVICE_2_TELEGRAM_BOT_TOKEN=222:BBB
+        DEVICE_2_DATA_DIR=/data/e1004
+
+    Each index ``n`` yields a ``Settings`` built from the shared base overridden
+    by that device's vars (re-validated so strings coerce to ``Path``/``int``).
+    ``DEVICE_<n>_DEVICE_ID`` is required per device; missing ``database_path`` /
+    ``rendered_images_dir`` are derived from ``data_dir``.
+
+    With no ``DEVICE_<n>_*`` vars this returns ``[get_settings()]`` so existing
+    single-device deployments are unchanged.
+    """
+    base = get_settings()
+    valid_fields = set(Settings.model_fields)
+
+    groups: dict[int, dict[str, str]] = {}
+    for key, value in os.environ.items():
+        match = _DEVICE_ENV_RE.match(key)
+        if match is None:
+            continue
+        idx = int(match.group(1))
+        field = match.group(2).lower()
+        if field not in valid_fields:
+            logger.warning("Ignoring unknown per-device env var %s", key)
+            continue
+        groups.setdefault(idx, {})[field] = value
+
+    if not groups:
+        return [base]
+
+    base_data = base.model_dump()
+    result: list[Settings] = []
+    seen_ids: set[str] = set()
+    for idx in sorted(groups):
+        overrides = groups[idx]
+        if "device_id" not in overrides:
+            logger.warning(
+                "Skipping device %d: DEVICE_%d_DEVICE_ID is required", idx, idx
+            )
+            continue
+        data_dir = overrides.get("data_dir")
+        if data_dir is not None:
+            overrides.setdefault("database_path", str(Path(data_dir) / "trmnl.db"))
+            overrides.setdefault(
+                "rendered_images_dir", str(Path(data_dir) / "rendered")
+            )
+        # Re-validate through Settings so string env values coerce to the field
+        # types (Path/int); init kwargs take priority over the ambient env.
+        settings = Settings(**{**base_data, **overrides})
+        if settings.device_id in seen_ids:
+            logger.warning(
+                "Duplicate device_id %s (device %d); skipping",
+                settings.device_id,
+                idx,
+            )
+            continue
+        seen_ids.add(settings.device_id)
+        result.append(settings)
+
+    return result or [base]

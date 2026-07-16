@@ -444,11 +444,9 @@ class Services:
             # item in the background so it is ready for the next wake.
             self._schedule_periodic_refill(cfg.mode)
             return (
-                ActionResponse(
-                    action=DeviceAction.draw,
-                    image_id=ready.image_id,
-                    image_url=self._image_url(ready.image_id),
-                    next_wake_seconds=plan.next_wake_seconds,
+                self._draw_response(
+                    ready.image_id,
+                    plan.next_wake_seconds,
                     epd_mode=get_mode(cfg.mode).epd_mode,
                 ),
                 False,
@@ -560,15 +558,33 @@ class Services:
         await queue_service.mark_displayed(
             self.db, self.settings.device_id, chosen.image_id
         )
-        return ActionResponse(
-            action=DeviceAction.draw,
-            image_id=chosen.image_id,
-            image_url=self._image_url(chosen.image_id),
-            next_wake_seconds=plan.next_wake_seconds,
-        )
+        return self._draw_response(chosen.image_id, plan.next_wake_seconds)
 
     def _image_url(self, image_id: str) -> str:
         return f"/api/device/{self.settings.device_id}/image/{image_id}"
+
+    def _draw_response(
+        self,
+        image_id: str,
+        next_wake_seconds: int,
+        epd_mode: Optional[str] = None,
+    ) -> ActionResponse:
+        """Build a ``draw`` response, adapting fields to the device type.
+
+        M5 gets ``image_url`` + an ``epd_mode`` waveform hint. E1004 also gets
+        ``frame_url`` (its firmware prefers it) and omits ``epd_mode`` since it
+        pushes the packed frame with ``writeNative`` regardless.
+        """
+        url = self._image_url(image_id)
+        is_e1004 = self.settings.device_type == "e1004"
+        return ActionResponse(
+            action=DeviceAction.draw,
+            image_id=image_id,
+            image_url=url,
+            frame_url=url if is_e1004 else None,
+            next_wake_seconds=next_wake_seconds,
+            epd_mode=None if is_e1004 else epd_mode,
+        )
 
     async def get_next_preview(self) -> Optional[tuple[str, str]]:
         """Path + image_id of the next image the device will display, if any.

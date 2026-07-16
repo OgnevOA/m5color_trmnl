@@ -44,8 +44,16 @@ class BrowserRenderer:
             self._playwright = None
         logger.info("Chromium browser stopped")
 
-    async def render_html(self, html: str) -> bytes:
-        """Render an HTML document and return a 400x600 PNG screenshot."""
+    async def render_html(
+        self,
+        html: str,
+        width: int = TARGET_WIDTH,
+        height: int = TARGET_HEIGHT,
+    ) -> bytes:
+        """Render an HTML document and return a ``width`` x ``height`` PNG.
+
+        Defaults to the M5 panel (400x600); the E1004 worker passes 1200x1600.
+        """
         if self._browser is None:
             raise RuntimeError("BrowserRenderer.start() must be called first")
 
@@ -53,7 +61,7 @@ class BrowserRenderer:
         # this workload and keeps memory usage low.
         async with self._lock:
             context = await self._browser.new_context(
-                viewport={"width": TARGET_WIDTH, "height": TARGET_HEIGHT},
+                viewport={"width": width, "height": height},
                 device_scale_factor=1,
             )
             page = await context.new_page()
@@ -63,8 +71,8 @@ class BrowserRenderer:
                     clip={
                         "x": 0,
                         "y": 0,
-                        "width": TARGET_WIDTH,
-                        "height": TARGET_HEIGHT,
+                        "width": width,
+                        "height": height,
                     }
                 )
             finally:

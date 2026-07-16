@@ -14,6 +14,9 @@ services:
     env_file:
       - .env
     volumes:
+      # Persists SQLite DB(s) and rendered frames. Multi-device mode is
+      # configured entirely in .env via DEVICE_<n>_* vars (one bot/DB/queue per
+      # device), all served from this single container/port.
       - ./data:/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8000/health', timeout=5).status==200 else sys.exit(1)"]

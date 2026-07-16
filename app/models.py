@@ -58,6 +58,14 @@ class StatusRequest(BaseModel):
     draw_ms: Optional[int] = Field(default=None, ge=0)
     awake_ms: Optional[int] = Field(default=None, ge=0)
 
+    # Informational device metadata (e.g. reported by the E1004 firmware). The
+    # authoritative device_type comes from server config; these are accepted so
+    # they aren't silently dropped and can be logged.
+    boot_count: Optional[int] = Field(default=None, ge=0)
+    pixel_format: Optional[str] = None
+    width: Optional[int] = Field(default=None, ge=0)
+    height: Optional[int] = Field(default=None, ge=0)
+
 
 class ActionResponse(BaseModel):
     """Strict action-based response returned to the device."""
@@ -65,6 +73,9 @@ class ActionResponse(BaseModel):
     action: DeviceAction
     image_id: Optional[str] = None
     image_url: Optional[str] = None
+    #: Absolute/relative URL to a packed full-frame buffer (E1004 ``.bin``). The
+    #: E1004 firmware prefers this over ``image_url``; M5 leaves it unset.
+    frame_url: Optional[str] = None
     next_wake_seconds: int
     message: Optional[str] = None
     #: E-paper refresh waveform hint for a ``draw`` ("quality"/"text"/...). The

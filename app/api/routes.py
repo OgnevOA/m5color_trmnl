@@ -21,20 +21,32 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_services(request: Request) -> Services:
-    services: Services = request.app.state.services
-    return services
+def _services_for(request: Request, device_id: str) -> Services:
+    """Resolve the ``Services`` for a device stack, or 404 if unknown."""
+    ctx = request.app.state.ctx
+    stack = ctx.stacks.get(device_id)
+    if stack is None:
+        raise HTTPException(status_code=404, detail="Unknown device")
+    return stack.services
+
+
+def device_services(
+    request: Request, device_id: str = Path(...)
+) -> Services:
+    """Dependency: the ``Services`` for the ``{device_id}`` in the URL path."""
+    return _services_for(request, device_id)
 
 
 async def require_device(
+    request: Request,
     device_id: str = Path(...),
     authorization: str | None = Header(default=None),
-    services: Services = Depends(get_services),
 ) -> str:
-    """Validate the device id + bearer token, returning the device id."""
+    """Validate the device id + bearer token against that stack, returning the id."""
     token = extract_bearer_token(authorization)
     if token is None:
         raise HTTPException(status_code=401, detail="Missing bearer token")
+    services = _services_for(request, device_id)
     if not await validate_device(services.db, device_id, token):
         raise HTTPException(status_code=401, detail="Invalid device or token")
     return device_id
@@ -47,15 +59,24 @@ async def health() -> JSONResponse:
 
 @router.get("/stats")
 async def stats(
+    request: Request,
     days: int = Query(default=7, ge=1, le=90),
     format: str = Query(default="html", pattern="^(html|json)$"),
-    services: Services = Depends(get_services),
+    device: str | None = Query(default=None),
 ):
     """Browser-friendly telemetry view for the last N days.
 
     Open ``/stats`` for an HTML table, or ``/stats?days=30&format=json`` for raw
-    records. Unauthenticated: intended for the LAN-local deployment.
+    records. Pick a device with ``?device=<id>`` (defaults to the first stack)
+    when more than one is configured. Unauthenticated: intended for the
+    LAN-local deployment.
     """
+    ctx = request.app.state.ctx
+    if not ctx.stacks:
+        raise HTTPException(status_code=503, detail="No device stacks running")
+    if device is None:
+        device = next(iter(ctx.stacks))
+    services = _services_for(request, device)
     summary = await services.get_stats_summary(hours=days * 24)
     records = await services.get_stats_records(days=days)
     if format == "json":
@@ -177,7 +198,7 @@ def _render_stats_html(
 async def device_status(
     payload: StatusRequest,
     device_id: str = Depends(require_device),
-    services: Services = Depends(get_services),
+    services: Services = Depends(device_services),
 ) -> ActionResponse:
     return await services.handle_status(payload)
 
@@ -186,7 +207,7 @@ async def device_status(
 async def device_image(
     image_id: str,
     device_id: str = Depends(require_device),
-    services: Services = Depends(get_services),
+    services: Services = Depends(device_services),
 ) -> FileResponse:
     rendered = await queue_service.get_rendered_image(
         services.db, device_id, image_id
@@ -195,8 +216,12 @@ async def device_image(
         raise HTTPException(status_code=404, detail="Image not found")
     if not os.path.exists(rendered.path):
         raise HTTPException(status_code=404, detail="Image file missing")
+    # E1004 frames are packed 4bpp .bin buffers; M5 renders are PNGs. Serve the
+    # content-type by extension so each device gets the right bytes.
+    ext = os.path.splitext(rendered.path)[1].lower()
+    media_type = "image/png" if ext == ".png" else "application/octet-stream"
     return FileResponse(
         rendered.path,
-        media_type="image/png",
-        filename=f"{image_id}.png",
+        media_type=media_type,
+        filename=f"{image_id}{ext or '.png'}",
     )

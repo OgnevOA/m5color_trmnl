@@ -13,6 +13,13 @@ The backend, the background pre-render worker, and the Telegram bot all run in
 **one combined asyncio process** (so they share a single SQLite connection and
 service layer with no multi-process write contention).
 
+That process can drive **multiple devices at once** -- e.g. an M5 Paper Color
+and a Seeed reTerminal E1004 -- each as a fully independent stack with its own
+Telegram bot, SQLite database, render queue, settings and data directory.
+Requests are routed to the right stack by the `{device_id}` in the URL, and the
+only shared resources are the HTTP port and the (locked) headless Chromium
+renderer. See [Multiple devices](#multiple-devices).
+
 ## Architecture
 
 ```
@@ -66,7 +73,7 @@ app/
   modes/               Content modes (plain_text, image, xkcd, quotes, ...)
   api/routes.py        Device + health HTTP endpoints
   telegram/handlers.py aiogram bot commands and content input
-  runtime.py           Wires API + worker + bot into one process
+  runtime.py           Wires API + per-device worker/bot stacks into one process
 server.py              Combined process entrypoint
 bot.py                 Standalone bot entrypoint (shares app/ services)
 client.py              Mock/reference device client
@@ -156,6 +163,8 @@ Pull requests build the image but do not push.
 | `RENDERED_IMAGES_DIR` | `/data/rendered` | Rendered PNG storage. |
 | `DEVICE_ID` | `m5paper-color-01` | Device identifier. |
 | `DEVICE_TOKEN` | `change-me-...` | Shared bearer token for the device. |
+| `DEVICE_TYPE` | `m5` | Panel family: `m5` (400x600 PNG) or `e1004` (1200x1600 packed frame). |
+| `DEVICE_<n>_<FIELD>` | _(unset)_ | Optional per-device override for multi-device mode; one stack per index `n` (see [Multiple devices](#multiple-devices)). |
 | `PUBLIC_BASE_URL` | `http://localhost:8000` | Public URL of the backend. |
 | `TELEGRAM_BOT_TOKEN` | _(empty)_ | Bot token; bot disabled if empty. |
 | `TELEGRAM_ALLOWED_USER_IDS` | _(empty)_ | Allowed user IDs (comma/space separated). |
@@ -166,19 +175,53 @@ Pull requests build the image but do not push.
 | `HOST` | `0.0.0.0` | Bind host. |
 | `PORT` | `8000` | Bind port. |
 
+## Multiple devices
+
+By default the process runs one device from the `DEVICE_*` / `TELEGRAM_*` env
+vars. To drive several devices at once (e.g. an M5 Paper Color and a reTerminal
+E1004), define `DEVICE_<n>_<FIELD>` vars in the same `.env` -- one index `n` per
+device, where `<FIELD>` is any setting name:
+
+```dotenv
+DEVICE_1_DEVICE_ID=m5paper-color-01
+DEVICE_1_DEVICE_TYPE=m5
+DEVICE_1_DEVICE_TOKEN=...
+DEVICE_1_TELEGRAM_BOT_TOKEN=111:AAA
+DEVICE_1_TELEGRAM_ALLOWED_USER_IDS=12345
+DEVICE_1_DATA_DIR=/data/m5
+
+DEVICE_2_DEVICE_ID=reterminal-e1004-01
+DEVICE_2_DEVICE_TYPE=e1004
+DEVICE_2_DEVICE_TOKEN=...
+DEVICE_2_TELEGRAM_BOT_TOKEN=222:BBB
+DEVICE_2_TELEGRAM_ALLOWED_USER_IDS=12345
+DEVICE_2_DATA_DIR=/data/e1004
+```
+
+Each index becomes a fully independent stack (own bot, DB, queue, settings, data
+dir); global config (timezone, mode API keys, Home Assistant, `PUBLIC_BASE_URL`,
+...) is shared from `.env`. `DEVICE_<n>_DEVICE_ID` is required per device;
+missing `DEVICE_<n>_DATABASE_PATH` / `DEVICE_<n>_RENDERED_IMAGES_DIR` default to
+`<data_dir>/trmnl.db` and `<data_dir>/rendered`. Both device firmwares point at
+the same `host:17555`, each with its own `DEVICE_ID` + token. When **any**
+`DEVICE_<n>_*` var is present the single `DEVICE_*` block is ignored; with none,
+single-device behaviour is unchanged.
+
 ## API summary
 
-All device endpoints require `Authorization: Bearer <DEVICE_TOKEN>`.
+All device endpoints require `Authorization: Bearer <DEVICE_TOKEN>` (validated
+against that device's stack).
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/api/device/{device_id}/status` | Report status/battery; returns an action + `next_wake_seconds`. |
-| `GET` | `/api/device/{device_id}/image/{image_id}` | Download a rendered 400x600 PNG. |
+| `GET` | `/api/device/{device_id}/image/{image_id}` | Download the rendered frame: a 400x600 PNG (M5) or a packed 1200x1600 `.bin` (E1004). |
+| `GET` | `/stats` | LAN telemetry view; add `?device=<id>` to pick a device (defaults to the first). |
 | `GET` | `/health` | Liveness check (`{"status":"ok"}`). |
 
 ### Status response actions
 
-- `draw` - download `image_url`, display it, then sleep.
+- `draw` - download `image_url` (E1004 prefers `frame_url`), display it, then sleep.
 - `sleep` - do not change the display; set the wake timer and sleep.
 - `noop` - no new content; keep the current display and sleep.
 - `blank` - display a blank frame, then sleep.
