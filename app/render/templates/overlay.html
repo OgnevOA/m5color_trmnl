@@ -31,18 +31,16 @@
             {% endfor %}
           </tbody>
         </table>
+        {% if weather %}
+        <div class="cal-wx">
+          <span class="wx-temp">{{ weather.temp }}{{ weather.unit }}</span>
+          {% if weather.condition %}<span class="wx-cond">{{ weather.condition }}</span>{% endif %}
+        </div>
+        {% endif %}
       </div>
 
       <div class="block info theme-{{ info_theme }}">
-        <div class="info-top">
-          <span class="date">{{ date_str }}</span>
-          {% if weather %}
-          <span class="wx">
-            <span class="wx-temp">{{ weather.temp }}{{ weather.unit }}</span>
-            {% if weather.condition %}<span class="wx-cond">{{ weather.condition }}</span>{% endif %}
-          </span>
-          {% endif %}
-        </div>
+        <div class="date">{{ date_str }}</div>
 
         {% if caption_title %}
         <div class="caption">

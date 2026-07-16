@@ -112,22 +112,17 @@ body {
   text-shadow: none;
 }
 
-.info-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 2vw;
-}
-
 .date {
   font-size: 2.35vh;
   font-weight: 600;
 }
 
-.wx {
+.cal-wx {
   display: flex;
   align-items: baseline;
-  gap: 0.6vw;
+  justify-content: center;
+  gap: 0.8vw;
+  margin-top: 0.9vh;
   white-space: nowrap;
 }
 
