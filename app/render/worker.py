@@ -218,7 +218,7 @@ class PreRenderWorker:
         if self._is_e1004:
             return e1004.render_e1004_frame(screenshot)
         # The composite is mostly continuous-tone artwork: FS-dither it to the
-        # exact panel palette (text sits on a scrim and survives cleanly).
+        # exact panel palette (the outlined overlay text stays crisp).
         return image_ops.dither_to_device_png(screenshot, fit_mode="cover")
 
     async def _render_html_item(self, item: QueueItem) -> bytes:

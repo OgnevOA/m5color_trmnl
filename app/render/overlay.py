@@ -1,12 +1,12 @@
 """Content-aware info overlay for artwork/photo frames.
 
 When the overlay is enabled the pre-render worker draws the artwork as a
-full-bleed background and lays a compact info band across the bottom quarter of
-the display: a mini month calendar on one side and the date, an artwork caption
-and the weather on the other.
+full-bleed background and lays a compact info band across the lower ~30% of the
+display: a mini month calendar on one side and the date, an artwork caption and
+the weather on the other.
 
 This module only *prepares* the data (fit the background, build the calendar,
-sample per-region luminance to pick a legible theme, summarize the weather).
+sample per-region luminance to pick legible text, summarize the weather).
 The actual HTML/screenshot render stays in the worker + Playwright pipeline via
 :func:`app.render.templates.render_overlay_html`.
 """
@@ -28,7 +28,7 @@ from . import image_ops
 logger = logging.getLogger(__name__)
 
 #: Fraction of the display height the overlay band occupies (bottom strip).
-OVERLAY_FRAC = 0.25
+OVERLAY_FRAC = 0.30
 #: Fraction of the band width used by the calendar block (left); the caption +
 #: weather block takes the rest. Kept in sync between layout and luminance
 #: sampling so each block's theme matches what sits behind it.
@@ -74,7 +74,7 @@ def build_calendar(now: datetime) -> dict:
 
 
 def _region_theme(img: Image.Image, box: tuple[int, int, int, int]) -> str:
-    """Return ``"light"`` (light text/dark scrim) or ``"dark"`` for a crop.
+    """Return ``"light"`` (white text) or ``"dark"`` (black text) for a crop.
 
     A bright region needs dark text; a dark region needs light text.
     """
@@ -89,11 +89,11 @@ def _region_theme(img: Image.Image, box: tuple[int, int, int, int]) -> str:
 
 
 def choose_block_themes(fitted: Image.Image) -> tuple[str, str]:
-    """Pick a per-block theme from the luminance behind each block.
+    """Pick per-block text color from the luminance behind each block.
 
-    Samples the calendar and caption/weather sub-regions of the bottom band
-    separately, so a picture that is dark on one side and bright on the other
-    stays legible on both. Returns ``(cal_theme, info_theme)``.
+    Samples the calendar and caption/weather sub-regions of the band separately,
+    so a picture that is dark on one side and bright on the other stays legible
+    on both. Returns ``(cal_theme, info_theme)``.
     """
     w, h = fitted.size
     top = int(h * (1.0 - OVERLAY_FRAC))
