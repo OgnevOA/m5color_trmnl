@@ -604,6 +604,23 @@ class Services:
             return None
         return str(path), ready.image_id
 
+    async def get_next_preview_image(self) -> Optional[tuple[bytes, str]]:
+        """PNG bytes + image_id for the next image, for a Telegram preview.
+
+        M5 renders are already PNGs; E1004 renders are packed ``.bin`` frame
+        buffers, so decode those back to a PNG so Telegram can display them.
+        """
+        preview = await self.get_next_preview()
+        if preview is None:
+            return None
+        path, image_id = preview
+        data = Path(path).read_bytes()
+        if self.settings.device_type == "e1004":
+            from .render import e1004
+
+            data = e1004.frame_to_png(data)
+        return data, image_id
+
     async def get_stats_summary(self, hours: int = 24) -> dict:
         """Aggregate recent telemetry for a quick at-a-glance summary."""
         since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()

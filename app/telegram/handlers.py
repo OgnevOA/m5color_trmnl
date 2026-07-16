@@ -21,8 +21,8 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     BotCommand,
+    BufferedInputFile,
     CallbackQuery,
-    FSInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
@@ -319,7 +319,7 @@ def build_router(services: Services) -> Router:
         await message.answer(await stats_text(services), reply_markup=main_menu())
 
     async def send_preview(message: Message) -> None:
-        preview = await services.get_next_preview()
+        preview = await services.get_next_preview_image()
         if preview is None:
             pending = (await services.get_status_snapshot()).queue_pending
             if pending:
@@ -333,9 +333,10 @@ def build_router(services: Services) -> Router:
                     "send content."
                 )
             return
-        path, image_id = preview
+        png, image_id = preview
         await message.answer_photo(
-            FSInputFile(path), caption=f"Next up on the display ({image_id})"
+            BufferedInputFile(png, filename=f"{image_id}.png"),
+            caption=f"Next up on the display ({image_id})",
         )
 
     @router.message(Command("preview"))

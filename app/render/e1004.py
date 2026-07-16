@@ -55,6 +55,10 @@ _COLOR_PALETTE = epd.ColorPalette(
     scheme=epd.ColorScheme.BWGBRY,
 )
 
+#: GxEPD2 color7 nibble index -> RGB, for decoding a packed frame back to an
+#: image (e.g. Telegram previews). Unmapped nibbles fall back to white.
+_INDEX_TO_RGB = {idx: rgb for _name, (rgb, idx) in _PALETTE.items()}
+
 
 def _fit_cover(
     img: Image.Image, background: tuple[int, int, int] = (255, 255, 255)
@@ -98,6 +102,33 @@ def pack_p_image(p_img: Image.Image) -> bytes:
     data = packed.tobytes()
     assert len(data) == FRAME_BYTES, f"{len(data)} != {FRAME_BYTES}"
     return data
+
+
+def frame_to_png(frame: bytes) -> bytes:
+    """Decode a packed E1004 frame buffer back into a PNG (for previews).
+
+    Reverses :func:`pack_p_image`: unpacks the 4bpp GxEPD2 nibbles to a
+    1200x1600 RGB image using the panel palette and encodes it as PNG. This is
+    display-only (Telegram preview); the device never needs it.
+    """
+    if len(frame) != FRAME_BYTES:
+        raise ValueError(f"expected {FRAME_BYTES} bytes, got {len(frame)}")
+
+    packed = np.frombuffer(frame, dtype=np.uint8).reshape(
+        E1004_HEIGHT, E1004_WIDTH // 2
+    )
+    nibbles = np.empty((E1004_HEIGHT, E1004_WIDTH), dtype=np.uint8)
+    nibbles[:, 0::2] = packed >> 4   # even x -> high nibble
+    nibbles[:, 1::2] = packed & 0x0F  # odd  x -> low nibble
+
+    lut = np.full((16, 3), 255, dtype=np.uint8)  # default -> white
+    for idx, rgb in _INDEX_TO_RGB.items():
+        lut[idx] = rgb
+    rgb = lut[nibbles]  # (H, W, 3)
+
+    buf = io.BytesIO()
+    Image.fromarray(rgb, "RGB").save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def render_e1004_frame(
