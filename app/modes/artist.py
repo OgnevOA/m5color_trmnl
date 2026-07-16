@@ -31,6 +31,7 @@ import time
 import urllib.parse
 from typing import Optional
 
+from ..llm import clean_painting_title
 from .base import ContentItem, ContentKind, Mode, ModeContext
 
 logger = logging.getLogger(__name__)
@@ -112,7 +113,7 @@ class ArtistMode(Mode):
             img_resp.raise_for_status()
             return ContentItem(
                 kind=ContentKind.image,
-                title=chosen["title"],
+                title=await self._compose_title(ctx, chosen),
                 image_bytes=img_resp.content,
             )
         except Exception as exc:  # network or parsing failure
@@ -185,10 +186,25 @@ class ArtistMode(Mode):
                 years.setdefault(_normalize_filename(fname), year)
         return files, years
 
+    async def _compose_title(self, ctx: ModeContext, chosen: dict) -> str:
+        """Build the caption title: LLM-cleaned name + our reliable year.
+
+        The year comes from Wikidata (trustworthy), so we clean only the messy
+        filename-derived name via the LLM and append the year ourselves. Any LLM
+        failure falls back to the regex-cleaned name.
+        """
+        name = chosen["name"]
+        cleaned = await clean_painting_title(
+            ctx.http, ctx.settings, name, self.artist_label
+        )
+        display = cleaned or name
+        year = chosen.get("year")
+        return f"{display} ({year})" if year else display
+
     async def _resolve_batch(
         self, ctx: ModeContext, files: list[str], years: dict[str, int]
     ) -> list[dict]:
-        """One imageinfo call -> [{title,width,height,thumburl}, ...]."""
+        """One imageinfo call -> [{name,year,width,height,thumburl}, ...]."""
         titles = "|".join(f"File:{name}" for name in files)
         resp = await ctx.http.get(
             _COMMONS_API,
@@ -222,9 +238,14 @@ class ArtistMode(Mode):
                 or self.artist_label
             )
             year = years.get(_normalize_filename(raw))
-            title = f"{name} ({year})" if year else name
             out.append(
-                {"title": title, "width": width, "height": height, "thumburl": thumb}
+                {
+                    "name": name,
+                    "year": year,
+                    "width": width,
+                    "height": height,
+                    "thumburl": thumb,
+                }
             )
         return out
 

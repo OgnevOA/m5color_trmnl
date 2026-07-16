@@ -263,3 +263,10 @@ between light and dark text so it stays legible over any picture. Weather reuses
 the OpenWeather config (shown only when `OPENWEATHER_API_KEY` is set). Since
 e-ink only repaints on wake, the date/weather reflect the last refresh, not live
 time. Text cards (quotes, QR, weather, plain text) are unaffected.
+
+The artist modes derive a caption from the Wikimedia Commons filename, which is
+often messy (artist name, catalogue numbers, `Google Art Project` tags, etc.).
+Set `DEEPSEEK_API_KEY` to have DeepSeek tidy those into a clean human title
+(the year still comes from Wikidata and is appended by us). It is best-effort
+and cached per title: any failure falls back to the regex-cleaned filename, so
+the caption never blocks a render.

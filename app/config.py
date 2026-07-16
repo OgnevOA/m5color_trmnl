@@ -96,6 +96,13 @@ class Settings(BaseSettings):
     weather_units: str = "metric"
     weather_lang: str = "en"
 
+    # DeepSeek LLM (OpenAI-compatible). Used to tidy the messy Commons
+    # filename-derived painting titles into clean human titles for the artwork
+    # overlay caption. Left blank -> the regex-cleaned filename is used as-is.
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
+    deepseek_base_url: str = "https://api.deepseek.com"
+
     # Home Assistant presence gate. When configured, the device holds its current
     # image (noop) while nobody is home. The gate is active purely based on
     # configuration: if the URL or token (or entity list) is blank it is skipped
