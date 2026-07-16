@@ -26,7 +26,7 @@
  *   - 13.3" E Ink Spectra 6, 1200x1600, T133A01 dual-chip controller
  *   - Battery: ADC on GPIO1, enable rail on GPIO21, onboard /2 divider, 5000mAh
  *   - Green status LED on GPIO48 (active-low); buzzer on GPIO45
- *   - Front buttons KEY0=GPIO4 (wake) / KEY1=GPIO3 / KEY2=GPIO5, active-low
+ *   - Front buttons (active-low); KEY2=GPIO5 (front-left Refresh) is the wake key
  *   - PCF8563 RTC (I2C 0x51, CR1220 backup)
  *
  * SETUP (one-time):
@@ -116,7 +116,7 @@ static const uint64_t MAX_SLEEP_SECONDS = 14400;  // 4 h
 #define STATUS_LED_PIN      48   // GPIO48 - green user LED (active-low)
 #define BUZZER_ENABLED      1
 #define BUZZER_PIN          45   // GPIO45 - buzzer
-#define WAKE_BUTTON_PIN     4    // GPIO4  - KEY0, front right button (active-low)
+#define WAKE_BUTTON_PIN     5    // GPIO5  - KEY2, front-left Refresh button (active-low)
 
 // ===========================================================================
 // Display: 13.3" 6-color 1200x1600, dual-chip T133A01 (Seeed GxEPD2 example pins)
@@ -547,8 +547,8 @@ static void enterDeepSleep(uint64_t seconds) {
   Serial.flush();
 
   esp_sleep_enable_timer_wakeup(seconds * 1000000ULL);
-  // Also wake on KEY0 (GPIO4, active-low): hold an internal pull-up so the pin
-  // idles HIGH and a press pulls it LOW to trigger the ext1 wake.
+  // Also wake on the Refresh button (KEY2 / GPIO5, active-low): hold an internal
+  // pull-up so the pin idles HIGH and a press pulls it LOW to trigger ext1 wake.
   rtc_gpio_pullup_en((gpio_num_t)WAKE_BUTTON_PIN);
   rtc_gpio_pulldown_dis((gpio_num_t)WAKE_BUTTON_PIN);
   esp_sleep_enable_ext1_wakeup(1ULL << WAKE_BUTTON_PIN, ESP_EXT1_WAKEUP_ANY_LOW);
@@ -562,7 +562,7 @@ static void enterDeepSleep(uint64_t seconds) {
 static const char *wakeReasonString() {
   switch (esp_sleep_get_wakeup_cause()) {
     case ESP_SLEEP_WAKEUP_TIMER: return "timer";
-    case ESP_SLEEP_WAKEUP_EXT1:  return "button";  // KEY0 pressed
+    case ESP_SLEEP_WAKEUP_EXT1:  return "button";  // Refresh button (KEY2) pressed
     default:                     return (g_boot_count <= 1) ? "manual" : "unknown";
   }
 }

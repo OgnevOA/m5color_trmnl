@@ -1,12 +1,14 @@
-"""Van Gogh mode: a random Van Gogh painting, portrait-first.
+"""Artist modes: a random public-domain painting by a chosen artist.
 
-Pulls works whose creator is Vincent van Gogh from Wikidata, then resolves the
-image (and its dimensions, to prefer portrait orientation) via the Wikimedia
-Commons API. Public-domain, no API key. Like the other periodic modes the
-network I/O happens off the device wake path and it degrades to a text fallback
-on any error.
+Each concrete mode (Van Gogh, Monet, Caravaggio, Klimt, ...) is the same
+pipeline pointed at a different Wikidata artist QID, so users pick the painter
+straight from the mode menu. Works whose creator is that artist are pulled from
+Wikidata, then the image (and its dimensions, to prefer portrait orientation)
+is resolved via the Wikimedia Commons API. Public-domain, no API key. Like the
+other periodic modes the network I/O happens off the device wake path and it
+degrades to a text fallback on any error.
 
-Source pipeline (3 requests per refill):
+Source pipeline (per refill):
   1. Wikidata SPARQL: all ?image where creator (P170) == the artist QID.
   2. Commons API: one batched imageinfo call for ~50 random files -> sizes +
      scaled thumbnail URLs. Portrait (height > width) candidates are preferred;
@@ -46,8 +48,6 @@ _IMG_UA = (
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
 
-#: Wikidata QID for Vincent van Gogh (creator, P170).
-_DEFAULT_ARTIST_QID = "Q5582"
 #: How many random files to resolve per refill (Commons allows 50 titles/call).
 _BATCH = 50
 #: Requested thumbnail width; large enough for both the 400x600 M5 and the
@@ -57,24 +57,32 @@ _THUMB_WIDTH = 1200
 #: An artist's catalogue barely changes, and WDQS is rate-limited and outage-
 #: prone, so cache the SPARQL file list per QID and refresh it at most weekly
 #: (stale results are served if a later refresh fails). Module-level because the
-#: worker creates a fresh mode instance per refill.
+#: worker creates a fresh mode instance per refill; keyed by QID so every artist
+#: mode has its own cached list.
 _CACHE_TTL = 7 * 24 * 3600
 _files_cache: dict[str, tuple[float, list[str]]] = {}
 _cache_lock = asyncio.Lock()
 
 
-class VanGoghMode(Mode):
-    name = "van_gogh"
-    description = "A random Van Gogh painting (portrait-first), via Wikidata/Commons."
+class ArtistMode(Mode):
+    """Base mode: a random painting by ``artist_qid``, portrait-first.
+
+    Concrete artist modes just set ``name``, ``description``, ``artist_qid``
+    (Wikidata QID) and ``artist_label`` (shown as the title / text fallback).
+    """
+
     periodic = True
     #: Continuous-tone artwork: the server dithers it to the exact panel palette,
     #: so the device just packs it nearest-color (no second on-panel dither).
     epd_mode = "fastest"
 
+    #: Overridden per concrete artist mode.
+    artist_qid: str = "Q5582"
+    artist_label: str = "Artwork"
+
     async def generate(self, ctx: ModeContext) -> Optional[ContentItem]:
         try:
-            qid = self._artist_qid(ctx)
-            files = await self._artist_image_files(ctx, qid)
+            files = await self._artist_image_files(ctx, self.artist_qid)
             if not files:
                 raise ValueError("no works with images for artist")
 
@@ -96,17 +104,12 @@ class VanGoghMode(Mode):
                 image_bytes=img_resp.content,
             )
         except Exception as exc:  # network or parsing failure
-            logger.warning("van_gogh generation failed: %s", exc)
+            logger.warning("%s generation failed: %s", self.name, exc)
             return ContentItem(
                 kind=ContentKind.text,
-                title="Van Gogh",
+                title=self.artist_label,
                 text="Could not fetch artwork right now.",
             )
-
-    def _artist_qid(self, ctx: ModeContext) -> str:
-        qid = getattr(ctx.settings, "van_gogh_artist_qid", "") or _DEFAULT_ARTIST_QID
-        # Guard the QID before splicing it into the SPARQL query.
-        return qid if re.fullmatch(r"Q\d+", qid) else _DEFAULT_ARTIST_QID
 
     async def _artist_image_files(self, ctx: ModeContext, qid: str) -> list[str]:
         """Commons file names for the artist's works, cached per QID (weekly).
@@ -184,9 +187,40 @@ class VanGoghMode(Mode):
             height = entry.get("height")
             if not thumb or not width or not height:
                 continue
-            raw = (page.get("title") or "Van Gogh").removeprefix("File:")
-            title = re.sub(r"\.\w+$", "", raw).replace("_", " ").strip() or "Van Gogh"
+            raw = (page.get("title") or self.artist_label).removeprefix("File:")
+            title = (
+                re.sub(r"\.\w+$", "", raw).replace("_", " ").strip()
+                or self.artist_label
+            )
             out.append(
                 {"title": title, "width": width, "height": height, "thumburl": thumb}
             )
         return out
+
+
+class VanGoghMode(ArtistMode):
+    name = "van_gogh"
+    description = "A random Vincent van Gogh painting (portrait-first)."
+    artist_qid = "Q5582"
+    artist_label = "Van Gogh"
+
+
+class MonetMode(ArtistMode):
+    name = "monet"
+    description = "A random Claude Monet painting (portrait-first)."
+    artist_qid = "Q296"
+    artist_label = "Claude Monet"
+
+
+class CaravaggioMode(ArtistMode):
+    name = "caravaggio"
+    description = "A random Caravaggio painting (portrait-first)."
+    artist_qid = "Q42207"
+    artist_label = "Caravaggio"
+
+
+class KlimtMode(ArtistMode):
+    name = "klimt"
+    description = "A random Gustav Klimt painting (portrait-first)."
+    artist_qid = "Q34661"
+    artist_label = "Gustav Klimt"

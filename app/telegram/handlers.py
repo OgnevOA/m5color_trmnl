@@ -83,6 +83,9 @@ MODE_LABELS = {
     "random_scrubs_quote": "Scrubs",
     "random_xkcd": "XKCD",
     "van_gogh": "Van Gogh",
+    "monet": "Monet",
+    "caravaggio": "Caravaggio",
+    "klimt": "Klimt",
 }
 
 INTERVAL_CHOICES = [15, 30, 60, 120, 240]

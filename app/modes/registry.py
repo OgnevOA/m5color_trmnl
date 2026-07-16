@@ -6,6 +6,7 @@ implementing :class:`~app.modes.base.Mode` and registering it here.
 
 from __future__ import annotations
 
+from .artist import CaravaggioMode, KlimtMode, MonetMode, VanGoghMode
 from .base import Mode
 from .image import ImageMode
 from .now_playing import NowPlayingMode
@@ -16,7 +17,6 @@ from .random_friends_quote import RandomFriendsQuoteMode
 from .random_office_quote import RandomOfficeQuoteMode
 from .random_scrubs_quote import RandomScrubsQuoteMode
 from .random_xkcd import RandomXkcdMode
-from .van_gogh import VanGoghMode
 from .weather import WeatherMode
 
 _MODE_CLASSES: dict[str, type[Mode]] = {
@@ -30,6 +30,9 @@ _MODE_CLASSES: dict[str, type[Mode]] = {
     RandomScrubsQuoteMode.name: RandomScrubsQuoteMode,
     RandomXkcdMode.name: RandomXkcdMode,
     VanGoghMode.name: VanGoghMode,
+    MonetMode.name: MonetMode,
+    CaravaggioMode.name: CaravaggioMode,
+    KlimtMode.name: KlimtMode,
 }
 
 DEFAULT_MODE = PlainTextMode.name

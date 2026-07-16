@@ -96,11 +96,6 @@ class Settings(BaseSettings):
     weather_units: str = "metric"
     weather_lang: str = "en"
 
-    # Van Gogh mode (no API key required; Wikidata + Wikimedia Commons). The
-    # artist is configurable by Wikidata QID -- default Q5582 is Vincent van
-    # Gogh; e.g. Q5598 = Caravaggio, Q296 = Claude Monet.
-    van_gogh_artist_qid: str = "Q5582"
-
     # Home Assistant presence gate. When configured, the device holds its current
     # image (noop) while nobody is home. The gate is active purely based on
     # configuration: if the URL or token (or entity list) is blank it is skipped
