@@ -31,6 +31,7 @@ import random
 import re
 import time
 import urllib.parse
+from collections import OrderedDict
 from typing import Optional
 
 from PIL import Image
@@ -92,6 +93,14 @@ _COLLAGE_TILE_PX = 700
 #: per tile in parallel makes most 429/timeout -- the reason a "9-work" collage
 #: could come back with only a few tiles.
 _COLLAGE_CONCURRENCY = 4
+
+#: Module-level LRU cache of already-downloaded collage tiles, keyed by the
+#: (stable) thumbnail URL -> ``(data_uri, width, height)``. Reuses the same
+#: process-lifetime caching approach as ``_files_cache`` so successive collages
+#: reuse works instead of re-fetching them from ``upload.wikimedia.org`` (which
+#: rate-limits). Bounded so memory stays sane; content is immutable so no TTL.
+_TILE_CACHE_MAX = 250
+_tile_cache: "OrderedDict[str, tuple[str, int, int]]" = OrderedDict()
 
 
 def _tile_data_uri(data: bytes, max_px: int = _COLLAGE_TILE_PX) -> tuple[str, int, int]:
@@ -238,12 +247,25 @@ class ArtistMode(Mode):
         return tiles[:need]
 
     async def _fetch_tile(self, ctx: ModeContext, chosen: dict) -> dict:
-        """Download one work and build its collage tile (data URI + metadata)."""
-        img_resp = await ctx.http.get(
-            chosen["thumburl"], headers={"User-Agent": _IMG_UA}, timeout=30
-        )
-        img_resp.raise_for_status()
-        uri, width, height = _tile_data_uri(img_resp.content)
+        """Build a collage tile, reusing a cached download when we have one.
+
+        Cache hits (by thumbnail URL) skip the network entirely; misses download
+        once, downscale, and store the result for later collages.
+        """
+        url = chosen["thumburl"]
+        cached = _tile_cache.get(url)
+        if cached is not None:
+            _tile_cache.move_to_end(url)  # mark most-recently-used
+        else:
+            img_resp = await ctx.http.get(
+                url, headers={"User-Agent": _IMG_UA}, timeout=30
+            )
+            img_resp.raise_for_status()
+            cached = _tile_data_uri(img_resp.content)
+            _tile_cache[url] = cached
+            while len(_tile_cache) > _TILE_CACHE_MAX:
+                _tile_cache.popitem(last=False)  # evict least-recently-used
+        uri, width, height = cached
         return {
             "uri": uri,
             "title": chosen.get("name"),
