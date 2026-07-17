@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import io
 import math
+import random
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -67,49 +68,114 @@ def _collage_css() -> str:
     return (_TEMPLATES_DIR / "collage.css").read_text(encoding="utf-8")
 
 
-# Mosaic presets keyed by tile count. Each cell is ``(col, cspan, row, rspan)``
-# on a ``cols x rows`` grid; the cells tile the grid without gaps/overlaps. The
-# count=3 preset is an internal fallback used when fewer works than requested
-# resolve. Layouts are portrait-friendly (one big "featured" cell + a mix of
-# tall/wide/square cells) so the result reads like a curated wall.
-_COLLAGE_PRESETS: dict[int, dict] = {
-    3: {
-        "cols": 2,
-        "rows": 2,
-        "cells": [(1, 1, 1, 2), (2, 1, 1, 1), (2, 1, 2, 1)],
-    },
-    4: {
-        "cols": 2,
-        "rows": 3,
-        "cells": [(1, 2, 1, 1), (1, 1, 2, 2), (2, 1, 2, 1), (2, 1, 3, 1)],
-    },
-    6: {
-        "cols": 3,
-        "rows": 4,
-        "cells": [
-            (1, 2, 1, 2),
-            (3, 1, 1, 2),
-            (1, 1, 3, 2),
-            (2, 1, 3, 1),
-            (3, 1, 3, 1),
-            (2, 2, 4, 1),
-        ],
-    },
-    9: {
-        "cols": 3,
-        "rows": 5,
-        "cells": [
-            (1, 2, 1, 2),
-            (3, 1, 1, 1),
-            (3, 1, 2, 1),
-            (1, 1, 3, 1),
-            (2, 1, 3, 1),
-            (3, 1, 3, 2),
-            (1, 2, 4, 1),
-            (1, 1, 5, 1),
-            (2, 2, 5, 1),
-        ],
-    },
+# Mosaic layouts keyed by tile count, each a LIST of interchangeable variants so
+# the arrangement changes between renders (not the same pattern every time). A
+# cell is ``(col, cspan, row, rspan)`` on a ``cols x rows`` grid; the cells tile
+# the grid without gaps/overlaps. The count=3 layout is an internal fallback used
+# when fewer works than requested resolve. Layouts are portrait-friendly (one big
+# "featured" cell + a mix of tall/wide/square cells) so it reads like a wall.
+_COLLAGE_LAYOUTS: dict[int, list[dict]] = {
+    3: [
+        {"cols": 2, "rows": 2, "cells": [(1, 1, 1, 2), (2, 1, 1, 1), (2, 1, 2, 1)]},
+        {"cols": 2, "rows": 2, "cells": [(1, 1, 1, 1), (2, 1, 1, 2), (1, 1, 2, 1)]},
+    ],
+    4: [
+        {
+            "cols": 2,
+            "rows": 3,
+            "cells": [(1, 2, 1, 1), (1, 1, 2, 2), (2, 1, 2, 1), (2, 1, 3, 1)],
+        },
+        {
+            "cols": 2,
+            "rows": 3,
+            "cells": [(1, 1, 1, 2), (2, 1, 1, 1), (2, 1, 2, 2), (1, 1, 3, 1)],
+        },
+    ],
+    6: [
+        {
+            "cols": 3,
+            "rows": 4,
+            "cells": [
+                (1, 2, 1, 2),
+                (3, 1, 1, 2),
+                (1, 1, 3, 2),
+                (2, 1, 3, 1),
+                (3, 1, 3, 1),
+                (2, 2, 4, 1),
+            ],
+        },
+        {
+            "cols": 3,
+            "rows": 4,
+            "cells": [
+                (1, 1, 1, 2),
+                (2, 2, 1, 2),
+                (1, 3, 3, 1),
+                (1, 1, 4, 1),
+                (2, 1, 4, 1),
+                (3, 1, 4, 1),
+            ],
+        },
+        {
+            "cols": 3,
+            "rows": 4,
+            "cells": [
+                (1, 3, 1, 1),
+                (1, 2, 2, 2),
+                (3, 1, 2, 1),
+                (3, 1, 3, 1),
+                (1, 2, 4, 1),
+                (3, 1, 4, 1),
+            ],
+        },
+    ],
+    9: [
+        {
+            "cols": 3,
+            "rows": 5,
+            "cells": [
+                (1, 2, 1, 2),
+                (3, 1, 1, 1),
+                (3, 1, 2, 1),
+                (1, 1, 3, 1),
+                (2, 1, 3, 1),
+                (3, 1, 3, 2),
+                (1, 2, 4, 1),
+                (1, 1, 5, 1),
+                (2, 2, 5, 1),
+            ],
+        },
+        {
+            "cols": 3,
+            "rows": 5,
+            "cells": [
+                (1, 1, 1, 1),
+                (2, 1, 1, 1),
+                (3, 1, 1, 2),
+                (1, 2, 2, 2),
+                (3, 1, 3, 1),
+                (1, 1, 4, 1),
+                (2, 1, 4, 1),
+                (3, 1, 4, 1),
+                (1, 3, 5, 1),
+            ],
+        },
+        {
+            "cols": 3,
+            "rows": 5,
+            "cells": [
+                (1, 3, 1, 1),
+                (1, 1, 2, 2),
+                (2, 1, 2, 1),
+                (3, 1, 2, 1),
+                (2, 1, 3, 1),
+                (3, 1, 3, 1),
+                (1, 2, 4, 2),
+                (3, 1, 4, 1),
+                (3, 1, 5, 1),
+            ],
+        },
+    ],
 }
 
 #: Small fixed set of "zoom" (extra crop) levels + offsets, so accent tiles
@@ -119,9 +185,14 @@ _COLLAGE_OFFSETS = ("0%", "-4%", "4%", "-3%", "3%")
 
 
 def _collage_preset(n_tiles: int) -> dict:
-    """Largest preset whose cell count is <= ``n_tiles`` (min 3)."""
-    usable = [c for c in sorted(_COLLAGE_PRESETS) if c <= n_tiles]
-    return _COLLAGE_PRESETS[usable[-1] if usable else 3]
+    """A random variant of the largest layout whose cell count is <= ``n_tiles``.
+
+    Picking a variant at random keeps successive collages from repeating the same
+    arrangement (only the paintings would otherwise change).
+    """
+    usable = [c for c in sorted(_COLLAGE_LAYOUTS) if c <= n_tiles]
+    count = usable[-1] if usable else 3
+    return random.choice(_COLLAGE_LAYOUTS[count])
 
 
 def _cell_kind(cspan: int, rspan: int) -> str:

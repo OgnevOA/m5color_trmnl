@@ -87,6 +87,12 @@ def _parse_year(value: str) -> Optional[int]:
 #: are shown at a fraction of the panel anyway.
 _COLLAGE_TILE_PX = 700
 
+#: How many tile images to download at once. Small on purpose:
+#: ``upload.wikimedia.org`` rate-limits bursts, so hammering it with one request
+#: per tile in parallel makes most 429/timeout -- the reason a "9-work" collage
+#: could come back with only a few tiles.
+_COLLAGE_CONCURRENCY = 4
+
 
 def _tile_data_uri(data: bytes, max_px: int = _COLLAGE_TILE_PX) -> tuple[str, int, int]:
     """Downscale image bytes and return ``(jpeg_data_uri, width, height)``.
@@ -186,16 +192,13 @@ class ArtistMode(Mode):
                 raise ValueError("not enough resolvable images for a collage")
 
             random.shuffle(info)
-            # A few extra candidates so a couple of failed downloads don't
-            # shrink the mosaic below the requested count.
-            candidates = info[: n + 4]
-            results = await asyncio.gather(
-                *(self._fetch_tile(ctx, c) for c in candidates),
-                return_exceptions=True,
-            )
-            tiles = [t for t in results if isinstance(t, dict)][:n]
+            tiles = await self._collect_tiles(ctx, info, n)
             if len(tiles) < 3:
                 raise ValueError("could not download enough works for a collage")
+            if len(tiles) < n:
+                logger.info(
+                    "%s collage: wanted %d works, got %d", self.name, n, len(tiles)
+                )
 
             html = render_collage_html(self.artist_label, tiles)
             return ContentItem(
@@ -208,6 +211,31 @@ class ArtistMode(Mode):
                 title=self.artist_label,
                 text="Could not fetch artwork right now.",
             )
+
+    async def _collect_tiles(
+        self, ctx: ModeContext, candidates: list[dict], need: int
+    ) -> list[dict]:
+        """Download works into collage tiles, tolerating failures.
+
+        ``upload.wikimedia.org`` rate-limits bursts, so downloads run in small
+        bounded-concurrency waves (not all at once) and we keep pulling from the
+        candidate pool until ``need`` tiles succeed or the pool is exhausted.
+        """
+        tiles: list[dict] = []
+        idx = 0
+        while len(tiles) < need and idx < len(candidates):
+            batch = candidates[idx : idx + _COLLAGE_CONCURRENCY]
+            idx += _COLLAGE_CONCURRENCY
+            results = await asyncio.gather(
+                *(self._fetch_tile(ctx, c) for c in batch),
+                return_exceptions=True,
+            )
+            for res in results:
+                if isinstance(res, dict):
+                    tiles.append(res)
+                else:
+                    logger.debug("collage tile fetch failed: %s", res)
+        return tiles[:need]
 
     async def _fetch_tile(self, ctx: ModeContext, chosen: dict) -> dict:
         """Download one work and build its collage tile (data URI + metadata)."""
