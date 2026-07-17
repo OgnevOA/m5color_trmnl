@@ -1,8 +1,9 @@
 /* Artist collage: a mixed-size mosaic of several works by one artist. Sizes use
    viewport-min units (vmin) so the same layout scales across the M5 (400x600)
-   and E1004 (1200x1600) panels. The mosaic is intentionally larger than the
-   viewport and offset, so edge works bleed off the frame and get cropped -- a
-   little artistic license rather than a tidy grid. */
+   and E1004 (1200x1600) panels. The "overflow/crop" look comes from each tile's
+   own oversized art layer (scaled beyond cover and clipped to the tile), NOT
+   from bleeding the whole grid off-canvas -- doing that would carry the edge
+   tiles' labels off the frame and clip the captions. */
 
 * {
   margin: 0;
@@ -23,13 +24,11 @@ body {
   -webkit-font-smoothing: none;
 }
 
-/* Bleed past every edge so the frame crops the outermost works. */
+/* Pinned to the exact frame so no tile (and no label) is ever pushed off the
+   panel. The crop/overflow effect is done per-tile via the .art zoom below. */
 .mosaic {
   position: absolute;
-  top: -2.2%;
-  left: -2.6%;
-  width: 105.2%;
-  height: 104.4%;
+  inset: 0;
   display: grid;
   gap: 0.7vmin;
 }
