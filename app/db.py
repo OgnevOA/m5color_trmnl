@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS settings (
     night_mode_enabled INTEGER NOT NULL DEFAULT 1,
     manual_override    INTEGER NOT NULL DEFAULT 0,
     overlay_enabled    INTEGER NOT NULL DEFAULT 0,
+    collage_enabled    INTEGER NOT NULL DEFAULT 0,
+    collage_count      INTEGER NOT NULL DEFAULT 6,
     FOREIGN KEY (device_id) REFERENCES devices(device_id)
 );
 
@@ -138,6 +140,8 @@ class Database:
         additions: dict[str, dict[str, str]] = {
             "settings": {
                 "overlay_enabled": "INTEGER",       # 0 / 1 (artwork info overlay)
+                "collage_enabled": "INTEGER",        # 0 / 1 (artist collage modifier)
+                "collage_count": "INTEGER NOT NULL DEFAULT 6",  # works per collage
             },
             "devices": {
                 "battery_alert_state": "TEXT",      # ok / low / critical

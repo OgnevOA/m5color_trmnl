@@ -62,6 +62,158 @@ def _overlay_css() -> str:
     return (_TEMPLATES_DIR / "overlay.css").read_text(encoding="utf-8")
 
 
+@lru_cache
+def _collage_css() -> str:
+    return (_TEMPLATES_DIR / "collage.css").read_text(encoding="utf-8")
+
+
+# Mosaic presets keyed by tile count. Each cell is ``(col, cspan, row, rspan)``
+# on a ``cols x rows`` grid; the cells tile the grid without gaps/overlaps. The
+# count=3 preset is an internal fallback used when fewer works than requested
+# resolve. Layouts are portrait-friendly (one big "featured" cell + a mix of
+# tall/wide/square cells) so the result reads like a curated wall.
+_COLLAGE_PRESETS: dict[int, dict] = {
+    3: {
+        "cols": 2,
+        "rows": 2,
+        "cells": [(1, 1, 1, 2), (2, 1, 1, 1), (2, 1, 2, 1)],
+    },
+    4: {
+        "cols": 2,
+        "rows": 3,
+        "cells": [(1, 2, 1, 1), (1, 1, 2, 2), (2, 1, 2, 1), (2, 1, 3, 1)],
+    },
+    6: {
+        "cols": 3,
+        "rows": 4,
+        "cells": [
+            (1, 2, 1, 2),
+            (3, 1, 1, 2),
+            (1, 1, 3, 2),
+            (2, 1, 3, 1),
+            (3, 1, 3, 1),
+            (2, 2, 4, 1),
+        ],
+    },
+    9: {
+        "cols": 3,
+        "rows": 5,
+        "cells": [
+            (1, 2, 1, 2),
+            (3, 1, 1, 1),
+            (3, 1, 2, 1),
+            (1, 1, 3, 1),
+            (2, 1, 3, 1),
+            (3, 1, 3, 2),
+            (1, 2, 4, 1),
+            (1, 1, 5, 1),
+            (2, 2, 5, 1),
+        ],
+    },
+}
+
+#: Small fixed set of "zoom" (extra crop) levels + offsets, so accent tiles
+#: bleed a little differently without looking random. Indexed deterministically.
+_COLLAGE_ZOOMS = (1.0, 1.14, 1.22, 1.1)
+_COLLAGE_OFFSETS = ("0%", "-4%", "4%", "-3%", "3%")
+
+
+def _collage_preset(n_tiles: int) -> dict:
+    """Largest preset whose cell count is <= ``n_tiles`` (min 3)."""
+    usable = [c for c in sorted(_COLLAGE_PRESETS) if c <= n_tiles]
+    return _COLLAGE_PRESETS[usable[-1] if usable else 3]
+
+
+def _cell_kind(cspan: int, rspan: int) -> str:
+    if cspan > rspan:
+        return "wide"
+    if rspan > cspan:
+        return "tall"
+    return "square"
+
+
+def _assign_collage_tiles(cells: list[tuple], tiles: list[dict]) -> list[dict]:
+    """Match works to cells by orientation (landscape->wide, portrait->tall).
+
+    Bigger cells are filled first so the featured/wide cells get the best-fitting
+    works; each work is used once.
+    """
+    def aspect(t: dict) -> float:
+        w, h = t.get("width") or 1, t.get("height") or 1
+        return (w / h) if h else 1.0
+
+    remaining = list(tiles)
+    # Fill larger cells first (better orientation match on the prominent tiles).
+    order = sorted(
+        range(len(cells)), key=lambda i: cells[i][1] * cells[i][3], reverse=True
+    )
+    featured_idx = order[0] if order else None
+
+    chosen: dict[int, dict] = {}
+    for idx in order:
+        if not remaining:
+            break
+        _, cspan, _, rspan = cells[idx]
+        kind = _cell_kind(cspan, rspan)
+        if kind == "wide":
+            pick = max(remaining, key=aspect)
+        elif kind == "tall":
+            pick = min(remaining, key=aspect)
+        else:  # square: closest to 1:1
+            pick = min(remaining, key=lambda t: abs(aspect(t) - 1.0))
+        remaining.remove(pick)
+        chosen[idx] = pick
+
+    out: list[dict] = []
+    for idx, (col, cspan, row, rspan) in enumerate(cells):
+        tile = chosen.get(idx)
+        if tile is None:
+            continue
+        featured = idx == featured_idx
+        # Deterministic per-title crop so refills of the same set look stable.
+        seed = sum(ord(ch) for ch in str(tile.get("title") or idx))
+        zoom = _COLLAGE_ZOOMS[seed % len(_COLLAGE_ZOOMS)]
+        if featured:
+            zoom = max(zoom, 1.08)
+        dx = _COLLAGE_OFFSETS[seed % len(_COLLAGE_OFFSETS)] if zoom > 1.01 else "0%"
+        dy = _COLLAGE_OFFSETS[(seed // 3) % len(_COLLAGE_OFFSETS)] if zoom > 1.01 else "0%"
+        out.append(
+            {
+                "col": col,
+                "cspan": cspan,
+                "row": row,
+                "rspan": rspan,
+                "featured": featured,
+                "uri": tile["uri"],
+                "title": tile.get("title"),
+                "year": tile.get("year"),
+                "zoom": round(zoom, 3),
+                "dx": dx,
+                "dy": dy,
+            }
+        )
+    return out
+
+
+def render_collage_html(artist_label: str, tiles: list[dict]) -> str:
+    """Render a mosaic of several works by one artist.
+
+    ``tiles`` is ``[{uri, title, year, width, height}, ...]`` (a data URI plus
+    metadata per work). The layout preset is chosen from the number of tiles and
+    each work is placed by orientation; extra tiles beyond the preset are unused.
+    """
+    preset = _collage_preset(len(tiles))
+    cells = _assign_collage_tiles(preset["cells"], tiles)
+    template = _env().get_template("collage.html")
+    return template.render(
+        collage_css=_collage_css(),
+        artist_label=artist_label,
+        cols=preset["cols"],
+        rows=preset["rows"],
+        cells=cells,
+    )
+
+
 def render_overlay_html(bg_uri: str, **context) -> str:
     """Render the artwork info overlay (background + calendar/caption/weather).
 

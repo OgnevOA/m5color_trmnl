@@ -30,6 +30,7 @@ from aiogram.types import (
 )
 
 from ..auth import is_user_allowed
+from ..modes.artist import ArtistMode
 from ..modes.registry import available_modes
 from ..services import Services
 
@@ -50,7 +51,8 @@ HELP_TEXT = (
     "/next - skip to / generate the next item\n"
     "/preview - send the next image to be displayed as a photo\n"
     "/night on|off|status - control night mode\n"
-    "/overlay on|off|status - toggle the info overlay on artwork\n\n"
+    "/overlay on|off|status - toggle the info overlay on artwork\n"
+    "/collage on|off|status|N - collage several works of an artist\n\n"
     "Send any text to display it. Send a photo to show it on the device.\n"
     "Prefix a message with 'qr:' to render it as a QR code "
     "(e.g. 'qr: https://example.com')."
@@ -71,6 +73,7 @@ BOT_COMMANDS = [
     BotCommand(command="clear", description="Clear the pending queue"),
     BotCommand(command="night", description="Control night mode"),
     BotCommand(command="overlay", description="Toggle the artwork info overlay"),
+    BotCommand(command="collage", description="Collage several works of an artist"),
     BotCommand(command="help", description="Show help"),
 ]
 
@@ -108,6 +111,7 @@ def main_menu() -> InlineKeyboardMarkup:
             [_btn("Next", "next"), _btn("Preview", "preview")],
             [_btn("Stats", "stats"), _btn("Clear queue", "clear")],
             [_btn("Night mode", "night"), _btn("Overlay", "overlay")],
+            [_btn("Collage", "collage")],
             [_btn("Help", "help")],
         ]
     )
@@ -160,6 +164,25 @@ def overlay_menu(enabled: bool) -> InlineKeyboardMarkup:
     )
 
 
+def collage_menu(enabled: bool, count: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                _btn(("\u2705 " if enabled else "") + "On", "collage:on"),
+                _btn(("\u2705 " if not enabled else "") + "Off", "collage:off"),
+            ],
+            [
+                _btn(
+                    ("\u2705 " if count == n else "") + f"{n} works",
+                    f"collage:count:{n}",
+                )
+                for n in ArtistMode.COLLAGE_COUNTS
+            ],
+            [_btn("\u2190 Back", "home")],
+        ]
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Text builders (shared by commands and callbacks)
 # --------------------------------------------------------------------------- #
@@ -179,6 +202,7 @@ async def status_text(services: Services) -> str:
         f"- Night mode: {'on' if s.night_mode_enabled else 'off'} "
         f"({'night now' if s.is_night_now else 'day now'})\n"
         f"- Overlay: {'on' if s.overlay_enabled else 'off'}\n"
+        f"- Collage: {'on' if s.collage_enabled else 'off'} ({s.collage_count} works)\n"
         f"- Last update: {last_seen}\n"
         f"- Last wake reason: {s.last_wake_reason or '?'}\n"
         f"- Last image: {s.last_image_id or '-'}\n"
@@ -312,7 +336,8 @@ def build_router(services: Services) -> Router:
             f"Mode: {MODE_LABELS.get(s.mode, s.mode)}  |  "
             f"Interval: {s.interval_minutes}m  |  "
             f"Night: {'on' if s.night_mode_enabled else 'off'}  |  "
-            f"Overlay: {'on' if s.overlay_enabled else 'off'}\n"
+            f"Overlay: {'on' if s.overlay_enabled else 'off'}  |  "
+            f"Collage: {('on ' + str(s.collage_count)) if s.collage_enabled else 'off'}\n"
             f"Queue: {s.queue_ready} ready / {s.queue_pending} pending"
         )
 
@@ -443,6 +468,31 @@ def build_router(services: Services) -> Router:
                 f"Info overlay is {'on' if s.overlay_enabled else 'off'}."
             )
 
+    @router.message(Command("collage"))
+    async def cmd_collage(message: Message) -> None:
+        parts = (message.text or "").split()
+        arg = parts[1].lower() if len(parts) > 1 else "status"
+        if arg == "on":
+            await services.set_collage(True)
+            s = await services.get_status_snapshot()
+            await message.answer(
+                f"Collage enabled: a mosaic of {s.collage_count} works by the "
+                "active artist (portrait and landscape)."
+            )
+        elif arg == "off":
+            await services.set_collage(False)
+            await message.answer("Collage disabled.")
+        elif arg.isdigit():
+            snapped = await services.set_collage_count(int(arg))
+            await message.answer(f"Collage set to {snapped} works.")
+        else:
+            s = await services.get_status_snapshot()
+            await message.answer(
+                f"Collage is {'on' if s.collage_enabled else 'off'} "
+                f"({s.collage_count} works). Use /collage on|off|N "
+                f"(N in {', '.join(str(n) for n in ArtistMode.COLLAGE_COUNTS)})."
+            )
+
     # -- Inline-keyboard callbacks --------------------------------------- #
     @router.callback_query(F.data.startswith(CB))
     async def on_callback(callback: CallbackQuery) -> None:
@@ -486,6 +536,13 @@ def build_router(services: Services) -> Router:
                 overlay_menu(s.overlay_enabled),
             )
             await callback.answer()
+        elif action == "collage":
+            await _safe_edit(
+                callback,
+                "Collage several works of the active artist into one mosaic:",
+                collage_menu(s.collage_enabled, s.collage_count),
+            )
+            await callback.answer()
         elif action == "next":
             item_id = await services.generate_for_active_mode()
             await callback.answer(
@@ -527,6 +584,23 @@ def build_router(services: Services) -> Router:
                 callback,
                 "Info overlay on artwork (date, calendar, caption, weather):",
                 overlay_menu(enable),
+            )
+        elif action.startswith("collage:count:"):
+            snapped = await services.set_collage_count(int(action.rsplit(":", 1)[1]))
+            await callback.answer(f"Collage set to {snapped} works")
+            await _safe_edit(
+                callback,
+                "Collage several works of the active artist into one mosaic:",
+                collage_menu(s.collage_enabled, snapped),
+            )
+        elif action.startswith("collage:"):
+            enable = action.split(":", 1)[1] == "on"
+            await services.set_collage(enable)
+            await callback.answer(f"Collage {'enabled' if enable else 'disabled'}")
+            await _safe_edit(
+                callback,
+                "Collage several works of the active artist into one mosaic:",
+                collage_menu(enable, s.collage_count),
             )
         elif action == "help":
             await _safe_edit(callback, HELP_TEXT, main_menu())

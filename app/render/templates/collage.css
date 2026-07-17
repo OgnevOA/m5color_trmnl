@@ -1,0 +1,97 @@
+/* Artist collage: a mixed-size mosaic of several works by one artist. Sizes use
+   viewport-min units (vmin) so the same layout scales across the M5 (400x600)
+   and E1004 (1200x1600) panels. The mosaic is intentionally larger than the
+   viewport and offset, so edge works bleed off the frame and get cropped -- a
+   little artistic license rather than a tidy grid. */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #111111;
+}
+
+body {
+  font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif;
+  -webkit-font-smoothing: none;
+}
+
+/* Bleed past every edge so the frame crops the outermost works. */
+.mosaic {
+  position: absolute;
+  top: -2.2%;
+  left: -2.6%;
+  width: 105.2%;
+  height: 104.4%;
+  display: grid;
+  gap: 0.7vmin;
+}
+
+.tile {
+  position: relative;
+  overflow: hidden;
+  background: #222222;
+}
+
+/* Separate layer so an oversized (zoomed/offset) painting is clipped to the
+   tile box without dragging the label with it. */
+.tile .art {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  transform: scale(var(--zoom, 1))
+    translate(var(--dx, 0%), var(--dy, 0%));
+  transform-origin: center;
+}
+
+.tile .label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 1.1vmin 1.4vmin 1.2vmin;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.82) 0%,
+    rgba(0, 0, 0, 0.5) 55%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  color: #ffffff;
+}
+
+.tile .t-title {
+  font-size: 1.9vmin;
+  font-weight: 700;
+  line-height: 1.12;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+.tile .t-year {
+  font-size: 1.5vmin;
+  font-weight: 500;
+  opacity: 0.9;
+  margin-top: 0.3vmin;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+/* The featured (largest) tile gets a bigger caption. */
+.tile.featured .t-title {
+  font-size: 2.6vmin;
+}
+
+.tile.featured .t-year {
+  font-size: 1.9vmin;
+}

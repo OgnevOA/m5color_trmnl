@@ -221,6 +221,17 @@ class PreRenderWorker:
         # exact panel palette (the outlined overlay text stays crisp).
         return image_ops.dither_to_device_png(screenshot, fit_mode="cover")
 
+    def _is_collage_item(self, item: QueueItem) -> bool:
+        """A collage is the only html item emitted by an artist mode.
+
+        Artist modes' :meth:`generate` only ever return image/text; html from an
+        artist mode therefore always comes from ``generate_collage``, so this is
+        unambiguous without threading extra state through the queue.
+        """
+        if item.kind != QueueItemKind.html or not item.mode_name:
+            return False
+        return isinstance(get_mode(item.mode_name), ArtistMode)
+
     async def _render_html_item(self, item: QueueItem) -> bytes:
         if item.kind == QueueItemKind.html and item.html_content:
             html = item.html_content
@@ -229,12 +240,18 @@ class PreRenderWorker:
                 body=item.text_content or "",
                 title=item.title or "Message",
             )
+        collage = self._is_collage_item(item)
         if self._is_e1004:
             screenshot = await self._renderer.render_html(
                 html, width=e1004.E1004_WIDTH, height=e1004.E1004_HEIGHT
             )
             return e1004.render_e1004_frame(screenshot)
         screenshot = await self._renderer.render_html(html)
+        if collage:
+            # A collage is continuous-tone artwork: FS-dither it to the exact
+            # panel palette (like photos), not the flat-card nearest-color path,
+            # so the paintings don't band.
+            return image_ops.dither_to_device_png(screenshot, fit_mode="cover")
         # Send the screenshot as smooth RGB; the device maps it to the panel
         # palette. Flat cards (quotes/QR/weather) use the "fastest" nearest-color
         # mode on-device, so anti-aliased text edges snap cleanly with no speckle.

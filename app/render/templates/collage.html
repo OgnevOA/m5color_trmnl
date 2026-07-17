@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      {{ collage_css | safe }}
+      .mosaic {
+        grid-template-columns: repeat({{ cols }}, 1fr);
+        grid-template-rows: repeat({{ rows }}, 1fr);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="mosaic">
+      {% for c in cells %}
+      <div
+        class="tile {{ 'featured' if c.featured else '' }}"
+        style="grid-column: {{ c.col }} / span {{ c.cspan }}; grid-row: {{ c.row }} / span {{ c.rspan }};"
+      >
+        <div
+          class="art"
+          style="background-image: url('{{ c.uri }}'); --zoom: {{ c.zoom }}; --dx: {{ c.dx }}; --dy: {{ c.dy }};"
+        ></div>
+        {% if c.title %}
+        <div class="label">
+          <div class="t-title">{{ c.title }}</div>
+          {% if c.year %}<div class="t-year">{{ c.year }}</div>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </body>
+</html>

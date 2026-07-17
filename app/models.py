@@ -104,6 +104,8 @@ class DeviceSettings(BaseModel):
     night_mode_enabled: bool = True
     manual_override: bool = False
     overlay_enabled: bool = False
+    collage_enabled: bool = False
+    collage_count: int = 6
 
 
 class QueueItem(BaseModel):
@@ -143,6 +145,8 @@ class StatusSnapshot(BaseModel):
     is_night_now: bool
     manual_override: bool
     overlay_enabled: bool = False
+    collage_enabled: bool = False
+    collage_count: int = 6
     last_seen: Optional[datetime] = None
     last_wake_reason: Optional[str] = None
     last_image_id: Optional[str] = None

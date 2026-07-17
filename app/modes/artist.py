@@ -24,6 +24,8 @@ browser UA (which it accepts).
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import logging
 import random
 import re
@@ -31,7 +33,10 @@ import time
 import urllib.parse
 from typing import Optional
 
+from PIL import Image
+
 from ..llm import clean_painting_title
+from ..render.templates import render_collage_html
 from .base import ContentItem, ContentKind, Mode, ModeContext
 
 logger = logging.getLogger(__name__)
@@ -77,6 +82,26 @@ def _parse_year(value: str) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
+#: Max long-side (px) for a collage tile image before base64-embedding. Kept
+#: small so the composed HTML (several images inline) stays a sane size; tiles
+#: are shown at a fraction of the panel anyway.
+_COLLAGE_TILE_PX = 700
+
+
+def _tile_data_uri(data: bytes, max_px: int = _COLLAGE_TILE_PX) -> tuple[str, int, int]:
+    """Downscale image bytes and return ``(jpeg_data_uri, width, height)``.
+
+    JPEG (not PNG) keeps the embedded data URI small for continuous-tone
+    paintings; the dimensions let the mosaic place the work by orientation.
+    """
+    img = Image.open(io.BytesIO(data)).convert("RGB")
+    img.thumbnail((max_px, max_px), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=82, optimize=True)
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}", img.width, img.height
+
+
 class ArtistMode(Mode):
     """Base mode: a random painting by ``artist_qid``, portrait-first.
 
@@ -92,6 +117,21 @@ class ArtistMode(Mode):
     #: Overridden per concrete artist mode.
     artist_qid: str = "Q5582"
     artist_label: str = "Artwork"
+
+    #: Collage modifier: supported works-per-collage presets (each maps to a
+    #: dedicated mosaic layout) and the default.
+    COLLAGE_COUNTS: tuple[int, ...] = (4, 6, 9)
+    COLLAGE_COUNT_DEFAULT: int = 6
+
+    @classmethod
+    def snap_collage_count(cls, count: int) -> int:
+        """Clamp ``count`` to [3, 9] and snap it to the nearest supported preset."""
+        try:
+            value = int(count)
+        except (TypeError, ValueError):
+            return cls.COLLAGE_COUNT_DEFAULT
+        value = max(3, min(9, value))
+        return min(cls.COLLAGE_COUNTS, key=lambda c: (abs(c - value), c))
 
     async def generate(self, ctx: ModeContext) -> Optional[ContentItem]:
         try:
@@ -123,6 +163,66 @@ class ArtistMode(Mode):
                 title=self.artist_label,
                 text="Could not fetch artwork right now.",
             )
+
+    async def generate_collage(
+        self, ctx: ModeContext, count: int
+    ) -> Optional[ContentItem]:
+        """Compose ``count`` works by this artist into one mosaic (HTML frame).
+
+        Unlike :meth:`generate`, this uses BOTH orientations (tiles are
+        cover-cropped, so the full catalogue gives more variety) and returns an
+        ``html`` item; the pre-render worker screenshots and dithers it. Any
+        failure degrades to the same text fallback as :meth:`generate`.
+        """
+        try:
+            n = self.snap_collage_count(count)
+            files, years = await self._artist_image_files(ctx, self.artist_qid)
+            if not files:
+                raise ValueError("no works with images for artist")
+
+            random.shuffle(files)
+            info = await self._resolve_batch(ctx, files[:_BATCH], years)
+            if len(info) < 3:
+                raise ValueError("not enough resolvable images for a collage")
+
+            random.shuffle(info)
+            # A few extra candidates so a couple of failed downloads don't
+            # shrink the mosaic below the requested count.
+            candidates = info[: n + 4]
+            results = await asyncio.gather(
+                *(self._fetch_tile(ctx, c) for c in candidates),
+                return_exceptions=True,
+            )
+            tiles = [t for t in results if isinstance(t, dict)][:n]
+            if len(tiles) < 3:
+                raise ValueError("could not download enough works for a collage")
+
+            html = render_collage_html(self.artist_label, tiles)
+            return ContentItem(
+                kind=ContentKind.html, title=self.artist_label, html=html
+            )
+        except Exception as exc:
+            logger.warning("%s collage generation failed: %s", self.name, exc)
+            return ContentItem(
+                kind=ContentKind.text,
+                title=self.artist_label,
+                text="Could not fetch artwork right now.",
+            )
+
+    async def _fetch_tile(self, ctx: ModeContext, chosen: dict) -> dict:
+        """Download one work and build its collage tile (data URI + metadata)."""
+        img_resp = await ctx.http.get(
+            chosen["thumburl"], headers={"User-Agent": _IMG_UA}, timeout=30
+        )
+        img_resp.raise_for_status()
+        uri, width, height = _tile_data_uri(img_resp.content)
+        return {
+            "uri": uri,
+            "title": chosen.get("name"),
+            "year": chosen.get("year"),
+            "width": width,
+            "height": height,
+        }
 
     async def _artist_image_files(
         self, ctx: ModeContext, qid: str

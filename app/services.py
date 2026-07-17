@@ -25,6 +25,7 @@ from .models import (
     StatusRequest,
     StatusSnapshot,
 )
+from .modes.artist import ArtistMode
 from .modes.base import ContentKind, ModeContext
 from .modes.registry import DEFAULT_MODE, get_mode, is_known_mode
 from .render.worker import PreRenderWorker
@@ -149,6 +150,8 @@ class Services:
             night_mode_enabled=bool(row["night_mode_enabled"]),
             manual_override=bool(row["manual_override"]),
             overlay_enabled=bool(row["overlay_enabled"]),
+            collage_enabled=bool(row["collage_enabled"]),
+            collage_count=int(row["collage_count"] or ArtistMode.COLLAGE_COUNT_DEFAULT),
         )
 
     async def set_interval(self, minutes: int) -> None:
@@ -227,6 +230,21 @@ class Services:
             "UPDATE settings SET overlay_enabled = ? WHERE device_id = ?",
             (1 if enabled else 0, self.settings.device_id),
         )
+
+    async def set_collage(self, enabled: bool) -> None:
+        await self.db.execute(
+            "UPDATE settings SET collage_enabled = ? WHERE device_id = ?",
+            (1 if enabled else 0, self.settings.device_id),
+        )
+
+    async def set_collage_count(self, count: int) -> int:
+        """Set works-per-collage, snapped to a supported preset. Returns it."""
+        snapped = ArtistMode.snap_collage_count(count)
+        await self.db.execute(
+            "UPDATE settings SET collage_count = ? WHERE device_id = ?",
+            (snapped, self.settings.device_id),
+        )
+        return snapped
 
     # ------------------------------------------------------------------ #
     # Device status handling (the core scheduling decision)
@@ -740,6 +758,8 @@ class Services:
             is_night_now=night_now,
             manual_override=cfg.manual_override,
             overlay_enabled=cfg.overlay_enabled,
+            collage_enabled=cfg.collage_enabled,
+            collage_count=cfg.collage_count,
             last_seen=last_seen,
             last_wake_reason=dev["last_wake_reason"] if dev else None,
             last_image_id=dev["last_image_id"] if dev else None,
@@ -847,7 +867,12 @@ class Services:
         cfg = await self.get_device_settings()
         mode = get_mode(cfg.mode)
         ctx = ModeContext(http=self.http, settings=self.settings)
-        content = await mode.generate(ctx)
+        # The collage modifier turns any artist mode into a mosaic of several
+        # works; other modes ignore it.
+        if cfg.collage_enabled and isinstance(mode, ArtistMode):
+            content = await mode.generate_collage(ctx, cfg.collage_count)
+        else:
+            content = await mode.generate(ctx)
         if content is None:
             return None
 

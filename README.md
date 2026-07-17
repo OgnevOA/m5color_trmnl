@@ -273,3 +273,21 @@ Set `DEEPSEEK_API_KEY` to have DeepSeek tidy those into a clean human title
 (the year still comes from Wikidata and is appended by us). It is best-effort
 and cached per title: any failure falls back to the regex-cleaned filename, so
 the caption never blocks a render.
+
+### Artist collage
+
+`/collage on` (off by default, per device) is a modifier applied to whichever
+artist mode is active: instead of a single painting, the pre-render worker
+composes several works by that same artist into one mixed-size mosaic frame,
+each tile labelled with its title and year. Unlike single-painting mode it draws
+from the artist's full catalogue (portrait *and* landscape), placing landscape
+works in the wide tiles and portraits in the tall ones; a few tiles are
+deliberately scaled up and bleed off the frame edges (cropped) so it reads like
+a curated wall rather than a tidy grid. Pick how many works with `/collage N`
+(4, 6 or 9; the value is snapped to the nearest supported layout) or the count
+buttons in the `/collage` menu.
+
+Because a collage is rendered as an HTML frame (then dithered like a photo), it
+takes precedence over `/overlay`: while collage is on, the calendar/weather
+overlay is not drawn (the tiles carry their own labels). `/collage` only affects
+the artist modes; other modes ignore it.
