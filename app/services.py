@@ -27,7 +27,7 @@ from .models import (
 )
 from .modes.artist import ArtistMode
 from .modes.base import ContentKind, ModeContext
-from .modes.registry import DEFAULT_MODE, get_mode, is_known_mode
+from .modes.registry import DEFAULT_MODE, PHOTO_COLLAGE_MODE, get_mode, is_known_mode
 from .render.worker import PreRenderWorker
 from .scheduler import compute_next_wake, get_now, is_night
 
@@ -40,9 +40,50 @@ CRITICAL_BATTERY_SLEEP_SECONDS = 6 * 3600
 #: re-hit HA and the device status path stays fast.
 PRESENCE_CACHE_TTL_SECONDS = 60.0
 
+#: Photo-album collage tuning. Telegram delivers an album as a rapid burst of
+#: separate photo messages with no "end" signal, so we buffer per media group
+#: and flush shortly after the last one arrives. The mosaic layouts top out at 9
+#: tiles; extra photos are dropped.
+ALBUM_DEBOUNCE_SECONDS = 2.5
+PHOTO_COLLAGE_MAX = 9
+#: Long side (px) each photo is downscaled to before base64-embedding, matching
+#: the artist collage tiles (keeps the composed HTML a sane size).
+_PHOTO_TILE_PX = 700
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _build_photo_tile(data: bytes) -> Optional[dict]:
+    """Decode one album photo into a collage tile (runs in a worker thread).
+
+    Detects faces (for the face-aware crop), downscales, and base64-encodes the
+    image. Returns ``{uri, width, height, face_box}`` where ``face_box`` is the
+    normalized union of the faces (or ``None``), or ``None`` if the bytes can't
+    be decoded. ``width/height`` are the (EXIF-corrected) original dimensions the
+    normalized face box refers to.
+    """
+    import base64
+    import io
+
+    from PIL import Image, ImageOps
+
+    from .render.faces import detect_faces_normalized, union_box
+
+    try:
+        img = Image.open(io.BytesIO(data))
+        img = ImageOps.exif_transpose(img).convert("RGB")
+    except Exception:
+        return None
+    faces = detect_faces_normalized(img)
+    box = union_box(faces)
+    tile_img = img.copy()
+    tile_img.thumbnail((_PHOTO_TILE_PX, _PHOTO_TILE_PX), Image.LANCZOS)
+    buf = io.BytesIO()
+    tile_img.save(buf, format="JPEG", quality=82, optimize=True)
+    uri = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    return {"uri": uri, "width": img.width, "height": img.height, "face_box": box}
 
 
 def _avg_cycle_drain_mv(series: list[Optional[int]]) -> Optional[float]:
@@ -89,6 +130,12 @@ class Services:
         # it. The lock serializes concurrent album-photo updates.
         self._carousel_group: Optional[str] = None
         self._carousel_lock = asyncio.Lock()
+        # Photo-collage album batching: buffer an album's photos by
+        # media_group_id and flush them into one collage shortly after the last
+        # one arrives (Telegram sends album photos as separate messages).
+        self._album_buffer: dict[str, list[bytes]] = {}
+        self._album_timers: dict[str, asyncio.Task] = {}
+        self._album_lock = asyncio.Lock()
         # Presence gate: (monotonic_expiry, value) where value is the cached
         # anyone_home result (True/False/None).
         self._presence_cache: Optional[tuple[float, Optional[bool]]] = None
@@ -846,6 +893,86 @@ class Services:
             )
         self._notify_worker()
         return item_id, started_new
+
+    async def add_album_photo(self, media_group_id: str, data: bytes) -> bool:
+        """Buffer one photo of an album for a face-aware collage.
+
+        Photos of a Telegram album arrive as separate messages; we accumulate
+        them by ``media_group_id`` and (re)arm a short debounce timer that flushes
+        the buffer into one collage once the burst settles. Returns ``True`` for
+        the first photo of the album (so the caller replies just once).
+        """
+        async with self._album_lock:
+            buf = self._album_buffer.setdefault(media_group_id, [])
+            started = len(buf) == 0
+            if len(buf) < PHOTO_COLLAGE_MAX:
+                buf.append(data)
+            timer = self._album_timers.get(media_group_id)
+            if timer is not None and not timer.done():
+                timer.cancel()
+            self._album_timers[media_group_id] = asyncio.create_task(
+                self._album_flush_after(media_group_id)
+            )
+        return started
+
+    async def _album_flush_after(self, media_group_id: str) -> None:
+        try:
+            await asyncio.sleep(ALBUM_DEBOUNCE_SECONDS)
+        except asyncio.CancelledError:
+            return  # another photo arrived; a fresh timer was armed
+        async with self._album_lock:
+            images = self._album_buffer.pop(media_group_id, [])
+            self._album_timers.pop(media_group_id, None)
+        if not images:
+            return
+        try:
+            await self.enqueue_user_collage(images)
+        except Exception:
+            logger.exception("photo collage build failed")
+
+    def _device_size(self) -> tuple[int, int]:
+        """Frame size (w, h) for this device, matching the worker's output."""
+        from .render import e1004, image_ops
+
+        if self.settings.device_type == "e1004":
+            return e1004.E1004_WIDTH, e1004.E1004_HEIGHT
+        return image_ops.TARGET_WIDTH, image_ops.TARGET_HEIGHT
+
+    async def enqueue_user_collage(self, images: list[bytes]) -> Optional[int]:
+        """Compose several user photos into one face-aware collage frame.
+
+        Each photo is decoded, face-detected and downscaled off the event loop
+        (``to_thread``); the mosaic is rendered to HTML and enqueued as a static
+        display. Falls back to a single image if fewer than two photos decode.
+        """
+        from .render.templates import render_collage_html
+
+        images = images[:PHOTO_COLLAGE_MAX]
+        tiles = await asyncio.gather(
+            *(asyncio.to_thread(_build_photo_tile, d) for d in images)
+        )
+        tiles = [t for t in tiles if t]
+        if len(tiles) < 2:
+            if images:
+                await self.enqueue_user_image(images[0])
+            return None
+
+        html = render_collage_html(
+            "", tiles, photo=True, device_size=self._device_size()
+        )
+        async with self._carousel_lock:
+            await self._switch_to_static_mode("image")
+            await self.clear_queue()
+            self._carousel_group = None  # the collage replaces any carousel
+            item_id = await queue_service.add_html_item(
+                self.db,
+                self.settings.device_id,
+                html=html,
+                title="Collage",
+                mode_name=PHOTO_COLLAGE_MODE,
+            )
+        self._notify_worker()
+        return item_id
 
     async def generate_for_active_mode(self, force: bool = False) -> Optional[int]:
         """Generate the next item for the active mode.

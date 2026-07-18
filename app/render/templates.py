@@ -9,6 +9,7 @@ import random
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 import qrcode
 from qrcode.constants import ERROR_CORRECT_M
@@ -75,6 +76,11 @@ def _collage_css() -> str:
 # when fewer works than requested resolve. Layouts are portrait-friendly (one big
 # "featured" cell + a mix of tall/wide/square cells) so it reads like a wall.
 _COLLAGE_LAYOUTS: dict[int, list[dict]] = {
+    2: [
+        # Side-by-side and stacked halves, used for a 2-photo album collage.
+        {"cols": 2, "rows": 1, "cells": [(1, 1, 1, 1), (2, 1, 1, 1)]},
+        {"cols": 1, "rows": 2, "cells": [(1, 1, 1, 1), (1, 1, 2, 1)]},
+    ],
     3: [
         {"cols": 2, "rows": 2, "cells": [(1, 1, 1, 2), (2, 1, 1, 1), (2, 1, 2, 1)]},
         {"cols": 2, "rows": 2, "cells": [(1, 1, 1, 1), (2, 1, 1, 2), (1, 1, 2, 1)]},
@@ -203,11 +209,55 @@ def _cell_kind(cspan: int, rspan: int) -> str:
     return "square"
 
 
-def _assign_collage_tiles(cells: list[tuple], tiles: list[dict]) -> list[dict]:
+def _focal_and_fit(
+    face_box: Optional[tuple[float, float, float, float]],
+    img_w: int,
+    img_h: int,
+    cell_aspect: float,
+) -> tuple[float, float, str]:
+    """Return ``(pos_x%, pos_y%, fit)`` so a cover-crop keeps the faces in frame.
+
+    ``face_box`` is the normalized ``(x, y, w, h)`` union of the faces (already
+    padded), or ``None`` for a plain centered crop. ``cell_aspect`` is the target
+    tile's width/height. When the face box cannot fit inside the cover window the
+    tile is letterboxed (``fit="contain"``) so nothing is cut.
+    """
+    if not face_box:
+        return 50.0, 50.0, "cover"
+    ux, uy, uw, uh = face_box
+    img_a = (img_w / img_h) if img_h else 1.0
+    # Fraction of the image that stays visible under a cover-crop into the cell.
+    if img_a > cell_aspect:  # image wider than cell -> crop the sides
+        vis_w, vis_h = cell_aspect / img_a, 1.0
+    else:  # image taller than cell -> crop top/bottom
+        vis_w, vis_h = 1.0, img_a / cell_aspect
+    if uw > vis_w or uh > vis_h:
+        return 50.0, 50.0, "contain"  # faces span more than a crop can keep
+
+    def pos(center: float, vis: float) -> float:
+        if vis >= 1.0:
+            return 50.0
+        left = min(max(center - vis / 2, 0.0), 1.0 - vis)
+        return round(left / (1.0 - vis) * 100.0, 2)
+
+    return pos(ux + uw / 2, vis_w), pos(uy + uh / 2, vis_h), "cover"
+
+
+def _assign_collage_tiles(
+    cells: list[tuple],
+    tiles: list[dict],
+    cols: int,
+    rows: int,
+    *,
+    photo: bool = False,
+    device_aspect: float = 0.75,
+) -> list[dict]:
     """Match works to cells by orientation (landscape->wide, portrait->tall).
 
     Bigger cells are filled first so the featured/wide cells get the best-fitting
-    works; each work is used once.
+    works; each work is used once. For ``photo`` collages the random crop-in is
+    disabled and each tile's focal point/fit is derived from its ``face_box`` so
+    faces are never clipped.
     """
     def aspect(t: dict) -> float:
         w, h = t.get("width") or 1, t.get("height") or 1
@@ -241,13 +291,30 @@ def _assign_collage_tiles(cells: list[tuple], tiles: list[dict]) -> list[dict]:
         if tile is None:
             continue
         featured = idx == featured_idx
-        # Deterministic per-title crop so refills of the same set look stable.
-        seed = sum(ord(ch) for ch in str(tile.get("title") or idx))
-        zoom = _COLLAGE_ZOOMS[seed % len(_COLLAGE_ZOOMS)]
-        if featured:
-            zoom = max(zoom, 1.08)
-        dx = _COLLAGE_OFFSETS[seed % len(_COLLAGE_OFFSETS)] if zoom > 1.01 else "0%"
-        dy = _COLLAGE_OFFSETS[(seed // 3) % len(_COLLAGE_OFFSETS)] if zoom > 1.01 else "0%"
+        pos_x, pos_y, fit = 50.0, 50.0, "cover"
+        if photo:
+            # Face-aware crop: no random zoom (would risk cutting a face); the
+            # focal point comes from the faces vs. the actual cell aspect.
+            zoom, dx, dy = 1.0, "0%", "0%"
+            cell_aspect = (cspan / cols) / (rspan / rows) * device_aspect
+            pos_x, pos_y, fit = _focal_and_fit(
+                tile.get("face_box"),
+                tile.get("width") or 1,
+                tile.get("height") or 1,
+                cell_aspect,
+            )
+        else:
+            # Deterministic per-title crop so refills of the same set look stable.
+            seed = sum(ord(ch) for ch in str(tile.get("title") or idx))
+            zoom = _COLLAGE_ZOOMS[seed % len(_COLLAGE_ZOOMS)]
+            if featured:
+                zoom = max(zoom, 1.08)
+            dx = _COLLAGE_OFFSETS[seed % len(_COLLAGE_OFFSETS)] if zoom > 1.01 else "0%"
+            dy = (
+                _COLLAGE_OFFSETS[(seed // 3) % len(_COLLAGE_OFFSETS)]
+                if zoom > 1.01
+                else "0%"
+            )
         out.append(
             {
                 "col": col,
@@ -261,20 +328,42 @@ def _assign_collage_tiles(cells: list[tuple], tiles: list[dict]) -> list[dict]:
                 "zoom": round(zoom, 3),
                 "dx": dx,
                 "dy": dy,
+                "pos_x": pos_x,
+                "pos_y": pos_y,
+                "fit": fit,
             }
         )
     return out
 
 
-def render_collage_html(artist_label: str, tiles: list[dict]) -> str:
-    """Render a mosaic of several works by one artist.
+def render_collage_html(
+    artist_label: str,
+    tiles: list[dict],
+    *,
+    photo: bool = False,
+    device_size: Optional[tuple[int, int]] = None,
+) -> str:
+    """Render a mosaic of several images into one frame.
 
-    ``tiles`` is ``[{uri, title, year, width, height}, ...]`` (a data URI plus
-    metadata per work). The layout preset is chosen from the number of tiles and
-    each work is placed by orientation; extra tiles beyond the preset are unused.
+    ``tiles`` is ``[{uri, width, height, ...}, ...]``. For artist collages each
+    tile also carries ``title``/``year`` (shown as a label). For ``photo``
+    collages (a user's album) tiles carry a ``face_box`` (normalized union of
+    detected faces, or ``None``) instead, no labels are drawn, and each tile is
+    cropped around its faces; ``device_size`` (w, h) sets the cell aspect used
+    for that crop. The layout preset is chosen from the number of tiles.
     """
     preset = _collage_preset(len(tiles))
-    cells = _assign_collage_tiles(preset["cells"], tiles)
+    device_aspect = 0.75
+    if device_size and device_size[1]:
+        device_aspect = device_size[0] / device_size[1]
+    cells = _assign_collage_tiles(
+        preset["cells"],
+        tiles,
+        preset["cols"],
+        preset["rows"],
+        photo=photo,
+        device_aspect=device_aspect,
+    )
     template = _env().get_template("collage.html")
     return template.render(
         collage_css=_collage_css(),

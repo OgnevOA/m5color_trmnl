@@ -37,6 +37,13 @@ _MODE_CLASSES: dict[str, type[Mode]] = {
 
 DEFAULT_MODE = PlainTextMode.name
 
+#: Reserved queue-item ``mode_name`` marker for a user-photo collage (an album
+#: composed into one mosaic). It is not a selectable mode -- it just tags the
+#: enqueued HTML so the worker dithers it as continuous-tone artwork rather than
+#: a flat card. Kept here (imported by both services and the worker) to avoid a
+#: circular import between them.
+PHOTO_COLLAGE_MODE = "photo_collage"
+
 
 def available_modes() -> list[str]:
     """Names of all registered (selectable) modes."""

@@ -40,13 +40,15 @@ body {
 }
 
 /* Separate layer so an oversized (zoomed/offset) painting is clipped to the
-   tile box without dragging the label with it. */
+   tile box without dragging the label with it. --pos-x/--pos-y set the crop
+   focal point (default center; face-aware for photo collages) and --fit is
+   cover or contain (contain letterboxes when faces can't fit a cover-crop). */
 .tile .art {
   position: absolute;
   inset: 0;
-  background-position: center;
+  background-position: var(--pos-x, 50%) var(--pos-y, 50%);
   background-repeat: no-repeat;
-  background-size: cover;
+  background-size: var(--fit, cover);
   transform: scale(var(--zoom, 1))
     translate(var(--dx, 0%), var(--dy, 0%));
   transform-origin: center;

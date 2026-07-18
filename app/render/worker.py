@@ -22,7 +22,7 @@ from ..config import Settings
 from ..db import Database
 from ..models import QueueItem, QueueItemKind
 from ..modes.artist import ArtistMode
-from ..modes.registry import get_mode
+from ..modes.registry import PHOTO_COLLAGE_MODE, get_mode
 from . import e1004, image_ops, overlay
 from .browser import BrowserRenderer
 from .templates import render_overlay_html, render_text_html
@@ -222,14 +222,17 @@ class PreRenderWorker:
         return image_ops.dither_to_device_png(screenshot, fit_mode="cover")
 
     def _is_collage_item(self, item: QueueItem) -> bool:
-        """A collage is the only html item emitted by an artist mode.
+        """Whether an html item is a continuous-tone mosaic (dither, not flat).
 
-        Artist modes' :meth:`generate` only ever return image/text; html from an
-        artist mode therefore always comes from ``generate_collage``, so this is
-        unambiguous without threading extra state through the queue.
+        Two sources produce collage html: an artist mode's ``generate_collage``
+        (mode_name is that artist mode) and a user photo album (mode_name is the
+        ``PHOTO_COLLAGE_MODE`` marker). Artist modes' ``generate`` only ever
+        return image/text, so html from an artist mode is always a collage.
         """
         if item.kind != QueueItemKind.html or not item.mode_name:
             return False
+        if item.mode_name == PHOTO_COLLAGE_MODE:
+            return True
         return isinstance(get_mode(item.mode_name), ArtistMode)
 
     async def _render_html_item(self, item: QueueItem) -> bytes:

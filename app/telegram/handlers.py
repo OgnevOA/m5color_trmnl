@@ -613,6 +613,19 @@ def build_router(services: Services) -> Router:
     async def on_photo(message: Message, bot: Bot) -> None:
         photo = message.photo[-1]
         data = await _download(bot, photo.file_id)
+        # With collage on, an album (several photos in one message) is composed
+        # into a single face-aware mosaic instead of a cycling carousel.
+        if message.media_group_id is not None:
+            cfg = await services.get_device_settings()
+            if cfg.collage_enabled:
+                started = await services.add_album_photo(
+                    message.media_group_id, data
+                )
+                if started:
+                    await message.answer(
+                        "Building a face-aware collage from your photos..."
+                    )
+                return
         _, started_new = await services.enqueue_user_image(
             data, suffix=".jpg", media_group_id=message.media_group_id
         )

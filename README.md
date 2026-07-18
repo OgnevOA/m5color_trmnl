@@ -291,3 +291,15 @@ Because a collage is rendered as an HTML frame (then dithered like a photo), it
 takes precedence over `/overlay`: while collage is on, the calendar/weather
 overlay is not drawn (the tiles carry their own labels). `/collage` only affects
 the artist modes; other modes ignore it.
+
+### Photo-album collage (face-aware)
+
+With `/collage` on, sending several photos in one Telegram message (an album)
+composes them into a single mosaic instead of the usual cycling carousel. Each
+tile's crop is chosen with on-device face detection (OpenCV YuNet) so faces are
+never cut off: the crop is centered on the faces, and if they can't fit a
+cover-crop the tile is letterboxed (`contain`) instead. Up to 9 photos are used.
+Face detection is best-effort -- if OpenCV or the bundled model
+(`app/assets/models/face_detection_yunet_2023mar.onnx`) is unavailable, tiles
+fall back to a centered crop, so the collage still renders. Sending a single
+photo, or an album with collage off, behaves as before.
