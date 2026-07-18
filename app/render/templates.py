@@ -215,12 +215,15 @@ def _focal_and_fit(
     img_h: int,
     cell_aspect: float,
 ) -> tuple[float, float, str]:
-    """Return ``(pos_x%, pos_y%, fit)`` so a cover-crop keeps the faces in frame.
+    """Return ``(pos_x%, pos_y%, fit)`` for a cover-crop centered on the faces.
 
     ``face_box`` is the normalized ``(x, y, w, h)`` union of the faces (already
     padded), or ``None`` for a plain centered crop. ``cell_aspect`` is the target
-    tile's width/height. When the face box cannot fit inside the cover window the
-    tile is letterboxed (``fit="contain"``) so nothing is cut.
+    tile's width/height. The tile is ALWAYS filled (``fit="cover"``) -- never
+    letterboxed -- so no dead/gray margins appear around a photo. The crop window
+    is positioned so the face union stays as centered as possible; if the faces
+    are larger than the window they are centered so the trim is shared evenly
+    instead of cutting one side off.
     """
     if not face_box:
         return 50.0, 50.0, "cover"
@@ -231,12 +234,13 @@ def _focal_and_fit(
         vis_w, vis_h = cell_aspect / img_a, 1.0
     else:  # image taller than cell -> crop top/bottom
         vis_w, vis_h = 1.0, img_a / cell_aspect
-    if uw > vis_w or uh > vis_h:
-        return 50.0, 50.0, "contain"  # faces span more than a crop can keep
 
     def pos(center: float, vis: float) -> float:
         if vis >= 1.0:
             return 50.0
+        # Center the visible window on the focal center, clamped to the image.
+        # When the faces overflow the window this still keeps them centered, so
+        # any unavoidable clipping is symmetric rather than lopsided.
         left = min(max(center - vis / 2, 0.0), 1.0 - vis)
         return round(left / (1.0 - vis) * 100.0, 2)
 

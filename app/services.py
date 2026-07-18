@@ -962,7 +962,12 @@ class Services:
         )
         async with self._carousel_lock:
             await self._switch_to_static_mode("image")
-            await self.clear_queue()
+            # Retire the whole existing photo carousel -- including already
+            # *displayed* photos, which ``clear_queue`` leaves untouched. The
+            # collage is served by the image-mode carousel path, so any leftover
+            # displayed photo would otherwise keep cycling in front of it (the
+            # "shows a previous picture" bug).
+            await queue_service.reset_image_carousel(self.db, self.settings.device_id)
             self._carousel_group = None  # the collage replaces any carousel
             item_id = await queue_service.add_html_item(
                 self.db,

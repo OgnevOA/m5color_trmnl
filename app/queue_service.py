@@ -12,6 +12,16 @@ from .models import QueueItem, QueueItemKind, QueueItemStatus, RenderedImage
 
 logger = logging.getLogger(__name__)
 
+#: Queue ``mode_name`` values that together make up the user "image" carousel:
+#: standalone photos (``image``) plus a composed photo-album collage
+#: (``photo_collage`` -- mirrors ``registry.PHOTO_COLLAGE_MODE``; duplicated as a
+#: literal here to keep this low-level module free of the heavy modes import).
+#: Both are served by the image-mode device path, so the carousel queries must
+#: consider them together -- otherwise a freshly rendered collage stays "ready"
+#: forever while the device keeps cycling the older plain photos.
+_CAROUSEL_MODES = ("image", "photo_collage")
+_CAROUSEL_PLACEHOLDERS = ",".join("?" for _ in _CAROUSEL_MODES)
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -150,31 +160,36 @@ async def mark_failed(db: Database, queue_item_id: int, error: str) -> None:
 # Image carousel (image mode)
 # --------------------------------------------------------------------------- #
 async def reset_image_carousel(db: Database, device_id: str) -> int:
-    """Retire the current image-mode set so a new batch can replace it."""
+    """Retire the current image-mode set (photos + collage) so a new batch can
+    replace it."""
     rows = await db.fetchall(
-        """SELECT id FROM queue_items
-           WHERE device_id = ? AND mode_name = 'image'
+        f"""SELECT id FROM queue_items
+           WHERE device_id = ? AND mode_name IN ({_CAROUSEL_PLACEHOLDERS})
              AND status IN ('pending','ready','displayed')""",
-        (device_id,),
+        (device_id, *_CAROUSEL_MODES),
     )
     await db.execute(
-        """UPDATE queue_items SET status = 'skipped'
-           WHERE device_id = ? AND mode_name = 'image'
+        f"""UPDATE queue_items SET status = 'skipped'
+           WHERE device_id = ? AND mode_name IN ({_CAROUSEL_PLACEHOLDERS})
              AND status IN ('pending','ready','displayed')""",
-        (device_id,),
+        (device_id, *_CAROUSEL_MODES),
     )
     return len(rows)
 
 
 async def carousel_images(db: Database, device_id: str) -> list[RenderedImage]:
-    """Ordered rendered images of the current image-mode carousel."""
+    """Ordered rendered images of the current image-mode carousel.
+
+    Includes both standalone photos and a composed photo-album collage (see
+    ``_CAROUSEL_MODES``) so the image-mode device path can serve either.
+    """
     rows = await db.fetchall(
-        """SELECT r.* FROM rendered_images r
+        f"""SELECT r.* FROM rendered_images r
            JOIN queue_items q ON q.id = r.queue_item_id
-           WHERE r.device_id = ? AND q.mode_name = 'image'
+           WHERE r.device_id = ? AND q.mode_name IN ({_CAROUSEL_PLACEHOLDERS})
              AND q.status IN ('ready','displayed')
            ORDER BY r.seq ASC""",
-        (device_id,),
+        (device_id, *_CAROUSEL_MODES),
     )
     return [_row_to_rendered(row) for row in rows]
 
