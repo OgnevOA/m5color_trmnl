@@ -19,13 +19,16 @@ import asyncio
 import contextlib
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 import httpx
 from aiogram import Bot, Dispatcher
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from .api.routes import router as api_router
+from .api.ui import router as ui_router
 from .config import Settings, load_device_settings
 from .db import Database
 from .render.browser import BrowserRenderer
@@ -201,4 +204,14 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
     app = FastAPI(title="m5color-trmnl backend", version="0.1.0", lifespan=lifespan)
     app.include_router(api_router)
+    app.include_router(ui_router)
+    # Serve the built React control panel (web/dist) as the site root. Mounted
+    # last so /health, /stats and /api/* keep matching first; guarded on the
+    # build existing so tests and no-build runs still work.
+    dist = Path(__file__).resolve().parent.parent / "web" / "dist"
+    if dist.is_dir():
+        app.mount("/", StaticFiles(directory=str(dist), html=True), name="ui")
+        logger.info("Serving web control panel from %s", dist)
+    else:
+        logger.info("Web control panel build not found at %s (skipping)", dist)
     return app

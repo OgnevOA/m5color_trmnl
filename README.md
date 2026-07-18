@@ -111,6 +111,41 @@ python client.py --loop                # repeat; press Enter to wake
 
 The mock display image is written to `mock_display/current.png`.
 
+## Web control panel
+
+A React single-page control panel is served by the same process at the site
+root (`http://<host-ip>:17555/`). It is a full-control dashboard - everything
+the Telegram bot does, plus live telemetry charts:
+
+- **Device selector** - switch between every configured device stack; the
+  choice is remembered in the browser.
+- **Status** - battery, active mode, night/overlay/collage state, queue depth,
+  last wake/seen, presence, with a low-battery callout.
+- **Next-frame preview** - the exact image the device will draw next.
+- **Controls** - change mode, interval, night/overlay/collage toggles, works
+  per collage (4/6/9), and Next / Skip / Clear queue.
+- **Send content** - push a text message, a QR code, or one/many images (an
+  album becomes a face-aware collage when collage mode is on).
+- **Telemetry** - battery-voltage trend, awake-time budget, draw-consistency,
+  and a recent-cycles table over a 1d / 7d / 30d range.
+
+It is **unauthenticated**, same as `/stats` - intended for a trusted LAN. Do
+not expose the host to the public internet.
+
+In production the panel is built during the Docker image build (a Node stage
+compiles `web/` into `web/dist`, which FastAPI serves). For frontend
+development, run Vite against a live backend:
+
+```bash
+cd web
+npm install
+npm run dev        # http://localhost:5173, proxies /api to :17555
+```
+
+(If the backend runs on a different port, adjust the proxy target in
+`web/vite.config.ts`.) The panel is only served when `web/dist` exists, so a
+plain `python server.py` without a build simply skips it (the API still works).
+
 ## Docker deployment (TrueNAS Scale)
 
 The published image already contains Chromium and all browser dependencies
@@ -218,6 +253,8 @@ against that device's stack).
 | `GET` | `/api/device/{device_id}/image/{image_id}` | Download the rendered frame: a 400x600 PNG (M5) or a packed 1200x1600 `.bin` (E1004). |
 | `GET` | `/stats` | LAN telemetry view; add `?device=<id>` to pick a device (defaults to the first). |
 | `GET` | `/health` | Liveness check (`{"status":"ok"}`). |
+| `GET` | `/` | Web control panel SPA (served from `web/dist` when built). |
+| `*` | `/api/ui/*` | Unauthenticated control-panel API (devices, status, stats, settings, content, preview). LAN-only. |
 
 ### Status response actions
 

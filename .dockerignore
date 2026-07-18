@@ -11,3 +11,7 @@ mock_display
 venv
 plan.md
 README.md
+# Web control panel: deps are installed and the bundle is built in a dedicated
+# Node stage, then copied into the final image. Never ship host artifacts.
+web/node_modules
+web/dist

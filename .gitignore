@@ -16,6 +16,10 @@ mock_display/
 # secrets.h.example is the committed template.
 secrets.h
 
+# Web control panel (Node)
+web/node_modules/
+web/dist/
+
 # OS / editor
 .DS_Store
 
