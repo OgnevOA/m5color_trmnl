@@ -150,6 +150,8 @@ class StatusSnapshot(BaseModel):
     last_seen: Optional[datetime] = None
     last_wake_reason: Optional[str] = None
     last_image_id: Optional[str] = None
+    #: image_id of the next frame the device will draw (for the panel preview).
+    next_image_id: Optional[str] = None
     battery_percent: Optional[float] = None
     queue_pending: int
     queue_ready: int

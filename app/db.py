@@ -72,6 +72,19 @@ CREATE TABLE IF NOT EXISTS telegram_users (
     added_at TEXT NOT NULL
 );
 
+-- User-starred pictures. Each row points at a durable, overlay-free PNG copied
+-- out of the render pipeline (see PreRenderWorker's clean-copy capture), so the
+-- favorites mode can replay it later with a fresh overlay. Per-device because
+-- image ids and panel resolution are per-device.
+CREATE TABLE IF NOT EXISTS favorites (
+    device_id  TEXT NOT NULL,
+    image_id   TEXT NOT NULL,
+    title      TEXT,
+    path       TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (device_id, image_id)
+);
+
 CREATE TABLE IF NOT EXISTS event_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id  TEXT,

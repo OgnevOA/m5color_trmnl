@@ -8,6 +8,7 @@ device request path.
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import time
 from datetime import datetime
@@ -122,15 +123,26 @@ class PreRenderWorker:
         try:
             t0 = time.monotonic()
             if item.kind == QueueItemKind.image:
-                payload = await self._render_image_item(item)
+                payload, clean = await self._render_image_item(item)
             else:
-                payload = await self._render_html_item(item)
+                payload, clean = await self._render_html_item(item)
 
             width, height, ext = self._output_spec()
             image_id = await queue_service.next_image_id(self._db)
             path = Path(self._settings.rendered_images_dir) / f"{image_id}{ext}"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(payload)
+            # Persist an overlay-free clean copy (only for pictures) so the frame
+            # can be favorited and later re-displayed with a fresh overlay. Kept
+            # beside the rendered frame and pruned in lockstep with it.
+            if clean is not None:
+                clean_path = (
+                    Path(self._settings.rendered_images_dir)
+                    / "clean"
+                    / f"{image_id}.png"
+                )
+                clean_path.parent.mkdir(parents=True, exist_ok=True)
+                clean_path.write_bytes(clean)
             render_ms = int((time.monotonic() - t0) * 1000)
             await queue_service.record_rendered(
                 self._db,
@@ -156,15 +168,19 @@ class PreRenderWorker:
             logger.exception("Failed to render queue item %s", item.id)
             await queue_service.mark_failed(self._db, item.id, str(exc))
 
-    async def _render_image_item(self, item: QueueItem) -> bytes:
+    async def _render_image_item(self, item: QueueItem) -> tuple[bytes, bytes]:
         if not item.source_path or not Path(item.source_path).exists():
             raise FileNotFoundError(f"source image missing: {item.source_path}")
         data = Path(item.source_path).read_bytes()
 
+        # Overlay-free, panel-fitted copy for favorites, captured regardless of
+        # whether the overlay is composited onto the drawn frame below.
+        clean = self._clean_capture_bytes(data)
+
         # Optional content-aware info overlay (date/calendar/caption/weather).
         if await self._overlay_enabled():
             try:
-                return await self._render_image_with_overlay(item, data)
+                return await self._render_image_with_overlay(item, data), clean
             except Exception:
                 # Never fail a frame over the overlay: fall back to the plain
                 # image so the device always has something to draw.
@@ -172,7 +188,20 @@ class PreRenderWorker:
                     "overlay render failed for item %s; using plain image", item.id
                 )
 
-        return self._render_plain_image(data)
+        return self._render_plain_image(data), clean
+
+    def _clean_capture_bytes(self, data: bytes) -> bytes:
+        """Overlay-free PNG of a source image, cover-fitted to the panel.
+
+        Framed identically to the drawn frame (same orientation + cover crop) but
+        with no overlay and no palette dithering, so a favorited copy can be
+        re-fit, re-dithered and re-overlaid cleanly when the favorites mode
+        replays it.
+        """
+        fitted = overlay.fit_background(data, self._device_size())
+        buf = io.BytesIO()
+        fitted.save(buf, format="PNG")
+        return buf.getvalue()
 
     def _render_plain_image(self, data: bytes) -> bytes:
         if self._is_e1004:
@@ -194,6 +223,9 @@ class PreRenderWorker:
         mode = get_mode(item.mode_name)
         if isinstance(mode, ArtistMode):
             return item.title, mode.artist_label
+        if item.mode_name == "favorites":
+            # A favorited picture keeps its original title for the caption.
+            return item.title, None
         return None, None
 
     async def _render_image_with_overlay(self, item: QueueItem, data: bytes) -> bytes:
@@ -235,7 +267,9 @@ class PreRenderWorker:
             return True
         return isinstance(get_mode(item.mode_name), ArtistMode)
 
-    async def _render_html_item(self, item: QueueItem) -> bytes:
+    async def _render_html_item(
+        self, item: QueueItem
+    ) -> tuple[bytes, Optional[bytes]]:
         if item.kind == QueueItemKind.html and item.html_content:
             html = item.html_content
         else:
@@ -248,14 +282,18 @@ class PreRenderWorker:
             screenshot = await self._renderer.render_html(
                 html, width=e1004.E1004_WIDTH, height=e1004.E1004_HEIGHT
             )
-            return e1004.render_e1004_frame(screenshot)
+            # A collage is an overlay-free picture -> keep its screenshot as the
+            # favoritable clean copy; flat cards (text/QR/weather) aren't pictures.
+            clean = screenshot if collage else None
+            return e1004.render_e1004_frame(screenshot), clean
         screenshot = await self._renderer.render_html(html)
+        clean = screenshot if collage else None
         if collage:
             # A collage is continuous-tone artwork: FS-dither it to the exact
             # panel palette (like photos), not the flat-card nearest-color path,
             # so the paintings don't band.
-            return image_ops.dither_to_device_png(screenshot, fit_mode="cover")
+            return image_ops.dither_to_device_png(screenshot, fit_mode="cover"), clean
         # Send the screenshot as smooth RGB; the device maps it to the panel
         # palette. Flat cards (quotes/QR/weather) use the "fastest" nearest-color
         # mode on-device, so anti-aliased text edges snap cleanly with no speckle.
-        return image_ops.png_bytes_to_display_png(screenshot, fit_mode="cover")
+        return image_ops.png_bytes_to_display_png(screenshot, fit_mode="cover"), clean

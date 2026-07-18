@@ -28,10 +28,17 @@ export interface Status {
   last_seen: string | null;
   last_wake_reason: string | null;
   last_image_id: string | null;
+  next_image_id: string | null;
   battery_percent: number | null;
   queue_pending: number;
   queue_ready: number;
   presence: string | null;
+}
+
+export interface Favorite {
+  image_id: string;
+  title: string | null;
+  created_at: string;
 }
 
 export interface StatsSummary {
@@ -122,6 +129,17 @@ export const api = {
   stats: (id: string, days: number) =>
     request<StatsResponse>(`/devices/${id}/stats?days=${days}`),
   previewUrl: (id: string) => `${BASE}/devices/${id}/preview.png?t=${Date.now()}`,
+  currentUrl: (id: string) => `${BASE}/devices/${id}/current.png?t=${Date.now()}`,
+  favoriteUrl: (id: string, imageId: string) =>
+    `${BASE}/devices/${id}/favorites/${imageId}.png`,
+  favorites: (id: string) =>
+    request<{ favorites: Favorite[] }>(`/devices/${id}/favorites`).then(
+      (r) => r.favorites,
+    ),
+  addFavorite: (id: string, imageId: string) =>
+    post(`/devices/${id}/favorite`, { image_id: imageId }),
+  removeFavorite: (id: string, imageId: string) =>
+    post(`/devices/${id}/unfavorite`, { image_id: imageId }),
 
   setMode: (id: string, name: string) => post(`/devices/${id}/mode`, { name }),
   setInterval: (id: string, minutes: number) =>

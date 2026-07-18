@@ -281,10 +281,18 @@ async def prune_rendered_images(
         if row["image_id"] in protected:
             continue
         if row["path"]:
+            rendered = Path(row["path"])
             try:
-                Path(row["path"]).unlink(missing_ok=True)
+                rendered.unlink(missing_ok=True)
             except OSError as exc:
                 logger.warning("could not delete %s: %s", row["path"], exc)
+            # Remove the overlay-free clean copy captured beside it (if any), so
+            # the favoritable-copy cache prunes in lockstep with the frames.
+            clean_sibling = rendered.parent / "clean" / f"{row['image_id']}.png"
+            try:
+                clean_sibling.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning("could not delete %s: %s", clean_sibling, exc)
         await db.execute(
             "DELETE FROM rendered_images WHERE device_id = ? AND image_id = ?",
             (device_id, row["image_id"]),

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time as _time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -27,6 +28,7 @@ from .models import (
 )
 from .modes.artist import ArtistMode
 from .modes.base import ContentKind, ModeContext
+from .modes.favorites import FavoritesMode
 from .modes.registry import DEFAULT_MODE, PHOTO_COLLAGE_MODE, get_mode, is_known_mode
 from .render.worker import PreRenderWorker
 from .scheduler import compute_next_wake, get_now, is_night
@@ -123,6 +125,9 @@ class Services:
         self.worker = worker
         self.notifier = None  # set via attach_notifier() once the bot exists
         self._uploads_dir = Path(settings.data_dir) / "uploads"
+        # Durable, overlay-free copies of starred pictures (survive queue/render
+        # pruning) that the favorites mode replays.
+        self._favorites_dir = Path(settings.data_dir) / "favorites"
         # Keep strong references to fire-and-forget background tasks.
         self._bg_tasks: Set[asyncio.Task] = set()
         # Image-carousel batching: photos sharing a Telegram media_group_id (an
@@ -161,6 +166,7 @@ class Services:
     async def seed(self) -> None:
         """Create the device, its settings row, and allowed users if missing."""
         self._uploads_dir.mkdir(parents=True, exist_ok=True)
+        self._favorites_dir.mkdir(parents=True, exist_ok=True)
         s = self.settings
         await self.db.execute(
             """INSERT INTO devices (device_id, token)
@@ -693,6 +699,144 @@ class Services:
             data = e1004.frame_to_png(data)
         return data, image_id
 
+    async def get_current_image(self) -> Optional[tuple[bytes, str]]:
+        """PNG bytes + image_id of the frame currently on the device.
+
+        Resolves the device's reported ``last_image_id`` to its rendered file
+        (falling back to the newest displayed image). E1004 frames are packed
+        ``.bin`` buffers, so decode those back to PNG for the browser. This is
+        the *drawn* frame (overlay included) -- a preview, not the overlay-free
+        copy stored for favorites.
+        """
+        dev = await self.db.fetchone(
+            "SELECT last_image_id FROM devices WHERE device_id = ?",
+            (self.settings.device_id,),
+        )
+        rendered = None
+        if dev and dev["last_image_id"]:
+            rendered = await queue_service.get_rendered_image(
+                self.db, self.settings.device_id, dev["last_image_id"]
+            )
+        if rendered is None:
+            row = await self.db.fetchone(
+                """SELECT image_id FROM rendered_images
+                   WHERE device_id = ? AND displayed_at IS NOT NULL
+                   ORDER BY seq DESC LIMIT 1""",
+                (self.settings.device_id,),
+            )
+            if row is not None:
+                rendered = await queue_service.get_rendered_image(
+                    self.db, self.settings.device_id, row["image_id"]
+                )
+        if rendered is None:
+            return None
+        path = Path(rendered.path)
+        if not path.exists():
+            return None
+        data = path.read_bytes()
+        if self.settings.device_type == "e1004":
+            from .render import e1004
+
+            data = e1004.frame_to_png(data)
+        return data, rendered.image_id
+
+    # ------------------------------------------------------------------ #
+    # Favorites
+    # ------------------------------------------------------------------ #
+    def _clean_copy_path(self, image_id: str) -> Path:
+        """Path of the overlay-free clean copy the worker captured for an image."""
+        return Path(self.settings.rendered_images_dir) / "clean" / f"{image_id}.png"
+
+    def _favorite_path(self, image_id: str) -> Path:
+        return self._favorites_dir / f"{image_id}.png"
+
+    async def add_favorite(self, image_id: str) -> bool:
+        """Star an image: copy its overlay-free clean capture into the durable
+        favorites store.
+
+        Returns ``False`` when there is no clean copy for the id (e.g. a flat
+        text/QR card, which isn't a picture, or an image already pruned).
+        """
+        clean = self._clean_copy_path(image_id)
+        if not clean.exists():
+            return False
+        # Title from the queue item that produced the image (e.g. a painting
+        # name), so the favorite keeps a caption.
+        row = await self.db.fetchone(
+            """SELECT q.title AS title FROM rendered_images r
+               JOIN queue_items q ON q.id = r.queue_item_id
+               WHERE r.device_id = ? AND r.image_id = ?""",
+            (self.settings.device_id, image_id),
+        )
+        title = row["title"] if row else None
+        self._favorites_dir.mkdir(parents=True, exist_ok=True)
+        dest = self._favorite_path(image_id)
+        dest.write_bytes(clean.read_bytes())
+        await self.db.execute(
+            """INSERT OR IGNORE INTO favorites
+               (device_id, image_id, title, path, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (self.settings.device_id, image_id, title, str(dest), _now_iso()),
+        )
+        return True
+
+    async def remove_favorite(self, image_id: str) -> bool:
+        row = await self.db.fetchone(
+            "SELECT path FROM favorites WHERE device_id = ? AND image_id = ?",
+            (self.settings.device_id, image_id),
+        )
+        if row is None:
+            return False
+        if row["path"]:
+            try:
+                Path(row["path"]).unlink(missing_ok=True)
+            except OSError:
+                logger.warning("could not delete favorite file %s", row["path"])
+        await self.db.execute(
+            "DELETE FROM favorites WHERE device_id = ? AND image_id = ?",
+            (self.settings.device_id, image_id),
+        )
+        return True
+
+    async def list_favorites(self) -> list[dict]:
+        rows = await self.db.fetchall(
+            """SELECT image_id, title, created_at FROM favorites
+               WHERE device_id = ? ORDER BY created_at DESC""",
+            (self.settings.device_id,),
+        )
+        return [
+            {
+                "image_id": r["image_id"],
+                "title": r["title"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+
+    async def get_favorite_bytes(self, image_id: str) -> Optional[bytes]:
+        row = await self.db.fetchone(
+            "SELECT path FROM favorites WHERE device_id = ? AND image_id = ?",
+            (self.settings.device_id, image_id),
+        )
+        path = (
+            Path(row["path"]) if row and row["path"] else self._favorite_path(image_id)
+        )
+        if not path.exists():
+            return None
+        return path.read_bytes()
+
+    async def _random_favorite(self) -> Optional[tuple[bytes, Optional[str]]]:
+        """Bytes + title of a random favorite whose file still exists, or None."""
+        rows = await self.db.fetchall(
+            "SELECT title, path FROM favorites WHERE device_id = ?",
+            (self.settings.device_id,),
+        )
+        usable = [r for r in rows if r["path"] and Path(r["path"]).exists()]
+        if not usable:
+            return None
+        choice = random.choice(usable)
+        return Path(choice["path"]).read_bytes(), choice["title"]
+
     async def get_stats_summary(self, hours: int = 24) -> dict:
         """Aggregate recent telemetry for a quick at-a-glance summary."""
         since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
@@ -797,6 +941,8 @@ class Services:
         if self.settings.presence_gating_configured:
             state = await self._presence_state()
             presence = {True: "home", False: "away"}.get(state, "unknown")
+        next_preview = await self.get_next_preview()
+        next_image_id = next_preview[1] if next_preview else None
         return StatusSnapshot(
             device_id=self.settings.device_id,
             mode=cfg.mode,
@@ -810,6 +956,7 @@ class Services:
             last_seen=last_seen,
             last_wake_reason=dev["last_wake_reason"] if dev else None,
             last_image_id=dev["last_image_id"] if dev else None,
+            next_image_id=next_image_id,
             battery_percent=dev["last_battery_percent"] if dev else None,
             queue_pending=await queue_service.count_pending(
                 self.db, self.settings.device_id
@@ -999,9 +1146,20 @@ class Services:
         cfg = await self.get_device_settings()
         mode = get_mode(cfg.mode)
         ctx = ModeContext(http=self.http, settings=self.settings)
+        # Favorites replays a starred picture; selection needs DB + filesystem,
+        # so it lives here (like the collage modifier) rather than in the mode.
+        if isinstance(mode, FavoritesMode):
+            favorite = await self._random_favorite()
+            if favorite is not None:
+                data, title = favorite
+                return await self._enqueue_mode_image(
+                    data, cfg.mode, title=title or "Favorite"
+                )
+            # No favorites yet -> fall through to the mode's text fallback.
+            content = await mode.generate(ctx)
         # The collage modifier turns any artist mode into a mosaic of several
         # works; other modes ignore it.
-        if cfg.collage_enabled and isinstance(mode, ArtistMode):
+        elif cfg.collage_enabled and isinstance(mode, ArtistMode):
             content = await mode.generate_collage(ctx, cfg.collage_count)
         else:
             content = await mode.generate(ctx)

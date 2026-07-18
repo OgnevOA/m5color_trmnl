@@ -454,6 +454,118 @@ table.data tr:last-child td {
   display: block;
 }
 
+/* Dual current/next frames ------------------------------------------------ */
+.frames {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.frame {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.frame .preview-frame {
+  min-height: 120px;
+}
+.frame .preview-frame img {
+  max-height: 320px;
+}
+.frame-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--stroke);
+  background: var(--surface-2);
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.star:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.star.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.star:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Favorites gallery ------------------------------------------------------- */
+.fav-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.fav {
+  position: relative;
+  margin: 0;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #000;
+}
+.fav img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+}
+.fav-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  line-height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.fav:hover .fav-remove,
+.fav:focus-within .fav-remove {
+  opacity: 1;
+}
+.fav-remove:hover {
+  background: var(--danger, #e5484d);
+}
+.fav figcaption {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--surface-2);
+}
+
+@media (max-width: 640px) {
+  .frames {
+    grid-template-columns: 1fr;
+  }
+}
+
 .muted {
   color: var(--text-3);
 }

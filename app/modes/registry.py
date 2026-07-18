@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from .artist import CaravaggioMode, KlimtMode, MonetMode, VanGoghMode
 from .base import Mode
+from .favorites import FavoritesMode
 from .image import ImageMode
 from .now_playing import NowPlayingMode
 from .placeholder_unknown import PlaceholderUnknownMode
@@ -33,6 +34,7 @@ _MODE_CLASSES: dict[str, type[Mode]] = {
     MonetMode.name: MonetMode,
     CaravaggioMode.name: CaravaggioMode,
     KlimtMode.name: KlimtMode,
+    FavoritesMode.name: FavoritesMode,
 }
 
 DEFAULT_MODE = PlainTextMode.name

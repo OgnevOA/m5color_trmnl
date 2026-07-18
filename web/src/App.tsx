@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, type DeviceInfo, type Meta, type Status } from "./api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { api, type DeviceInfo, type Favorite, type Meta, type Status } from "./api";
 import { useToast } from "./ui";
 import { StatusCard } from "./components/StatusCard";
 import { Preview } from "./components/Preview";
+import { Favorites } from "./components/Favorites";
 import { Controls } from "./components/Controls";
 import { SendContent } from "./components/SendContent";
 import { Telemetry } from "./components/Telemetry";
@@ -22,10 +23,16 @@ export default function App() {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [bootError, setBootError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [previewBump, setPreviewBump] = useState(0);
   const [, forceTick] = useState(0);
+
+  const favoriteIds = useMemo(
+    () => new Set(favorites.map((f) => f.image_id)),
+    [favorites],
+  );
 
   // Initial load: meta + device list.
   useEffect(() => {
@@ -57,14 +64,25 @@ export default function App() {
     }
   }, [deviceId, toast]);
 
+  const loadFavorites = useCallback(async () => {
+    if (!deviceId) return;
+    try {
+      setFavorites(await api.favorites(deviceId));
+    } catch {
+      /* favorites are non-critical; leave the last known list */
+    }
+  }, [deviceId]);
+
   // Fetch on device change + poll.
   useEffect(() => {
     if (!deviceId) return;
     setStatus(null);
+    setFavorites([]);
     loadStatus();
+    loadFavorites();
     const id = window.setInterval(loadStatus, POLL_MS);
     return () => window.clearInterval(id);
-  }, [deviceId, loadStatus]);
+  }, [deviceId, loadStatus, loadFavorites]);
 
   // Keep the "updated Ns ago" label ticking.
   useEffect(() => {
@@ -84,6 +102,24 @@ export default function App() {
       }
     },
     [loadStatus, toast],
+  );
+
+  const toggleFavorite = useCallback(
+    async (imageId: string, makeFavorite: boolean) => {
+      if (!deviceId) return;
+      try {
+        if (makeFavorite) await api.addFavorite(deviceId, imageId);
+        else await api.removeFavorite(deviceId, imageId);
+        await loadFavorites();
+        toast.push(
+          makeFavorite ? "Added to favorites" : "Removed from favorites",
+          "success",
+        );
+      } catch (e) {
+        toast.push(e instanceof Error ? e.message : String(e), "error");
+      }
+    },
+    [deviceId, loadFavorites, toast],
   );
 
   const selectDevice = (id: string) => {
@@ -133,7 +169,13 @@ export default function App() {
           <div className="grid layout">
             <div className="grid" style={{ gap: 16 }}>
               <StatusCard status={status} />
-              <Preview deviceId={deviceId} bump={previewBump} />
+              <Preview
+                deviceId={deviceId}
+                bump={previewBump}
+                status={status}
+                favoriteIds={favoriteIds}
+                onToggleFavorite={toggleFavorite}
+              />
             </div>
             <div className="grid" style={{ gap: 16 }}>
               <Controls
@@ -150,6 +192,13 @@ export default function App() {
               />
             </div>
           </div>
+
+          <div className="section-title">Favorites</div>
+          <Favorites
+            deviceId={deviceId}
+            favorites={favorites}
+            onRemove={(id) => toggleFavorite(id, false)}
+          />
 
           <div className="section-title">Telemetry</div>
           <Telemetry deviceId={deviceId} />

@@ -121,7 +121,12 @@ the Telegram bot does, plus live telemetry charts:
   choice is remembered in the browser.
 - **Status** - battery, active mode, night/overlay/collage state, queue depth,
   last wake/seen, presence, with a low-battery callout.
-- **Next-frame preview** - the exact image the device will draw next.
+- **Frames** - the image currently on the device (*Now showing*) alongside the
+  next one queued (*Up next*), each with a star to add it to Favorites.
+- **Favorites** - a gallery of starred pictures. Stars save an **overlay-free**
+  copy of the frame, so when the `favorites` mode later replays one it re-fits,
+  re-dithers, and re-applies the current overlay fresh. Switch the mode to
+  `favorites` to show a random favorite on each wake.
 - **Controls** - change mode, interval, night/overlay/collage toggles, works
   per collage (4/6/9), and Next / Skip / Clear queue.
 - **Send content** - push a text message, a QR code, or one/many images (an
@@ -254,7 +259,7 @@ against that device's stack).
 | `GET` | `/stats` | LAN telemetry view; add `?device=<id>` to pick a device (defaults to the first). |
 | `GET` | `/health` | Liveness check (`{"status":"ok"}`). |
 | `GET` | `/` | Web control panel SPA (served from `web/dist` when built). |
-| `*` | `/api/ui/*` | Unauthenticated control-panel API (devices, status, stats, settings, content, preview). LAN-only. |
+| `*` | `/api/ui/*` | Unauthenticated control-panel API (devices, status, stats, settings, content, current/next preview, favorites). LAN-only. |
 
 ### Status response actions
 
@@ -282,7 +287,8 @@ Sending a plain text message displays that text. Sending a photo displays the
 image (cropped/resized to 400x600).
 
 Built-in modes: `plain_text`, `image`, `random_friends_quote`, `random_xkcd`,
-and the artist modes `van_gogh`, `monet`, `caravaggio`, `klimt` (each a random,
+`favorites` (replays a random picture you starred in the web panel), and the
+artist modes `van_gogh`, `monet`, `caravaggio`, `klimt` (each a random,
 portrait-first public-domain painting by that artist via Wikidata/Commons)
 (plus a placeholder for unknown modes). The mode interface in
 `app/modes/base.py` makes adding new modes (weather, calendar, now_playing,

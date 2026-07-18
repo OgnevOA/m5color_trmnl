@@ -64,6 +64,10 @@ class QrBody(BaseModel):
     payload: str
 
 
+class ImageIdBody(BaseModel):
+    image_id: str
+
+
 # --------------------------------------------------------------------------- #
 # Read endpoints
 # --------------------------------------------------------------------------- #
@@ -129,6 +133,63 @@ async def device_preview(request: Request, device_id: str) -> Response:
         media_type="image/png",
         headers={"Cache-Control": "no-store", "X-Image-Id": image_id},
     )
+
+
+@router.get("/devices/{device_id}/current.png")
+async def device_current(request: Request, device_id: str) -> Response:
+    """PNG of the frame currently on the device (overlay included; E1004 decoded)."""
+    services = _services(request, device_id)
+    result = await services.get_current_image()
+    if result is None:
+        raise HTTPException(status_code=404, detail="No current image yet")
+    data, image_id = result
+    return Response(
+        content=data,
+        media_type="image/png",
+        headers={"Cache-Control": "no-store", "X-Image-Id": image_id},
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Favorites
+# --------------------------------------------------------------------------- #
+@router.get("/devices/{device_id}/favorites")
+async def list_favorites(request: Request, device_id: str) -> JSONResponse:
+    services = _services(request, device_id)
+    return JSONResponse({"favorites": await services.list_favorites()})
+
+
+@router.get("/devices/{device_id}/favorites/{image_id}.png")
+async def favorite_image(
+    request: Request, device_id: str, image_id: str
+) -> Response:
+    services = _services(request, device_id)
+    data = await services.get_favorite_bytes(image_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Unknown favorite")
+    return Response(content=data, media_type="image/png")
+
+
+@router.post("/devices/{device_id}/favorite")
+async def add_favorite(
+    request: Request, device_id: str, body: ImageIdBody
+) -> JSONResponse:
+    services = _services(request, device_id)
+    ok = await services.add_favorite(body.image_id)
+    if not ok:
+        raise HTTPException(
+            status_code=404, detail="No favoritable image for that id"
+        )
+    return JSONResponse({"ok": True})
+
+
+@router.post("/devices/{device_id}/unfavorite")
+async def remove_favorite(
+    request: Request, device_id: str, body: ImageIdBody
+) -> JSONResponse:
+    services = _services(request, device_id)
+    removed = await services.remove_favorite(body.image_id)
+    return JSONResponse({"ok": removed})
 
 
 # --------------------------------------------------------------------------- #
