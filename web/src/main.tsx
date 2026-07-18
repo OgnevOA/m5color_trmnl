@@ -1,13 +1,15 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
-import { ToastProvider } from "./ui";
+import { LightboxProvider, ToastProvider } from "./ui";
 import "./theme.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ToastProvider>
-      <App />
+      <LightboxProvider>
+        <App />
+      </LightboxProvider>
     </ToastProvider>
   </React.StrictMode>,
 );

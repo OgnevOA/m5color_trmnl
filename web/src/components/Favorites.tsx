@@ -1,5 +1,5 @@
 import { api, type Favorite } from "../api";
-import { Card } from "../ui";
+import { Card, useLightbox } from "../ui";
 
 export function Favorites({
   deviceId,
@@ -10,6 +10,7 @@ export function Favorites({
   favorites: Favorite[];
   onRemove: (imageId: string) => void;
 }) {
+  const lightbox = useLightbox();
   return (
     <Card title={`Favorites (${favorites.length})`}>
       {favorites.length === 0 ? (
@@ -25,7 +26,11 @@ export function Favorites({
               <img
                 src={api.favoriteUrl(deviceId, f.image_id)}
                 alt={f.title ?? "favorite"}
+                title="Click to enlarge"
                 loading="lazy"
+                onClick={() =>
+                  lightbox.open(api.favoriteUrl(deviceId, f.image_id), f.title)
+                }
               />
               <button
                 className="fav-remove"

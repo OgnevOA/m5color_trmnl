@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useState,
   type ReactNode,
 } from "react";
@@ -155,6 +156,70 @@ export function Callout({
       <span className="bar" />
       <div>{children}</div>
     </div>
+  );
+}
+
+// --- Lightbox --------------------------------------------------------------
+interface LightboxState {
+  src: string;
+  title?: string | null;
+}
+interface LightboxApi {
+  open: (src: string, title?: string | null) => void;
+  close: () => void;
+}
+const LightboxCtx = createContext<LightboxApi>({ open: () => {}, close: () => {} });
+export const useLightbox = () => useContext(LightboxCtx);
+
+export function LightboxProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<LightboxState | null>(null);
+  const open = useCallback(
+    (src: string, title?: string | null) => setState({ src, title }),
+    [],
+  );
+  const close = useCallback(() => setState(null), []);
+
+  useEffect(() => {
+    if (!state) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKey);
+    // Prevent the page behind the dialog from scrolling.
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [state, close]);
+
+  return (
+    <LightboxCtx.Provider value={{ open, close }}>
+      {children}
+      {state && (
+        <div
+          className="lightbox"
+          role="dialog"
+          aria-modal="true"
+          onClick={close}
+        >
+          <div className="lightbox-inner" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="lightbox-close"
+              onClick={close}
+              aria-label="Close"
+            >
+              &times;
+            </button>
+            <img src={state.src} alt={state.title ?? "Enlarged image"} />
+            {state.title && (
+              <div className="lightbox-caption">{state.title}</div>
+            )}
+          </div>
+        </div>
+      )}
+    </LightboxCtx.Provider>
   );
 }
 

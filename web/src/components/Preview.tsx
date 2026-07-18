@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type Status } from "../api";
-import { Card, Button } from "../ui";
+import { Card, Button, useLightbox } from "../ui";
 
 function StarIcon({ filled }: { filled: boolean }) {
   return (
@@ -30,6 +30,7 @@ function Frame({
   onToggleFavorite: (imageId: string, makeFavorite: boolean) => void;
 }) {
   const [failed, setFailed] = useState(false);
+  const lightbox = useLightbox();
   useEffect(() => setFailed(false), [src]);
 
   return (
@@ -54,7 +55,13 @@ function Frame({
       </div>
       <div className="preview-frame">
         {src && !failed ? (
-          <img src={src} alt={label} onError={() => setFailed(true)} />
+          <img
+            src={src}
+            alt={label}
+            title="Click to enlarge"
+            onError={() => setFailed(true)}
+            onClick={() => lightbox.open(src, label)}
+          />
         ) : (
           <div className="muted" style={{ padding: 24, textAlign: "center" }}>
             Nothing here yet.

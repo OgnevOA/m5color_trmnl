@@ -699,35 +699,46 @@ class Services:
             data = e1004.frame_to_png(data)
         return data, image_id
 
-    async def get_current_image(self) -> Optional[tuple[bytes, str]]:
-        """PNG bytes + image_id of the frame currently on the device.
+    async def _resolve_current_rendered(self):
+        """The rendered frame the device is showing (or None).
 
-        Resolves the device's reported ``last_image_id`` to its rendered file
-        (falling back to the newest displayed image). E1004 frames are packed
-        ``.bin`` buffers, so decode those back to PNG for the browser. This is
-        the *drawn* frame (overlay included) -- a preview, not the overlay-free
-        copy stored for favorites.
+        Prefers the device-confirmed ``last_image_id`` (reported by the firmware
+        after a successful draw), so once the device checks in this matches the
+        physical panel exactly. Before that first confirmation it falls back to
+        the most recently *sent* (displayed) frame so the panel still has
+        something to show. Both ``current.png`` and the status snapshot resolve
+        through here, so the id the panel stars always matches the shown frame.
         """
         dev = await self.db.fetchone(
             "SELECT last_image_id FROM devices WHERE device_id = ?",
             (self.settings.device_id,),
         )
-        rendered = None
         if dev and dev["last_image_id"]:
             rendered = await queue_service.get_rendered_image(
                 self.db, self.settings.device_id, dev["last_image_id"]
             )
-        if rendered is None:
-            row = await self.db.fetchone(
-                """SELECT image_id FROM rendered_images
-                   WHERE device_id = ? AND displayed_at IS NOT NULL
-                   ORDER BY seq DESC LIMIT 1""",
-                (self.settings.device_id,),
+            if rendered is not None:
+                return rendered
+        row = await self.db.fetchone(
+            """SELECT image_id FROM rendered_images
+               WHERE device_id = ? AND displayed_at IS NOT NULL
+               ORDER BY seq DESC LIMIT 1""",
+            (self.settings.device_id,),
+        )
+        if row is not None:
+            return await queue_service.get_rendered_image(
+                self.db, self.settings.device_id, row["image_id"]
             )
-            if row is not None:
-                rendered = await queue_service.get_rendered_image(
-                    self.db, self.settings.device_id, row["image_id"]
-                )
+        return None
+
+    async def get_current_image(self) -> Optional[tuple[bytes, str]]:
+        """PNG bytes + image_id of the frame currently on the device.
+
+        E1004 frames are packed ``.bin`` buffers, so decode those back to PNG
+        for the browser. This is the *drawn* frame (overlay included) -- a
+        preview, not the overlay-free copy stored for favorites.
+        """
+        rendered = await self._resolve_current_rendered()
         if rendered is None:
             return None
         path = Path(rendered.path)
@@ -941,6 +952,8 @@ class Services:
         if self.settings.presence_gating_configured:
             state = await self._presence_state()
             presence = {True: "home", False: "away"}.get(state, "unknown")
+        current = await self._resolve_current_rendered()
+        current_image_id = current.image_id if current else None
         next_preview = await self.get_next_preview()
         next_image_id = next_preview[1] if next_preview else None
         return StatusSnapshot(
@@ -955,7 +968,7 @@ class Services:
             collage_count=cfg.collage_count,
             last_seen=last_seen,
             last_wake_reason=dev["last_wake_reason"] if dev else None,
-            last_image_id=dev["last_image_id"] if dev else None,
+            last_image_id=current_image_id,
             next_image_id=next_image_id,
             battery_percent=dev["last_battery_percent"] if dev else None,
             queue_pending=await queue_service.count_pending(
