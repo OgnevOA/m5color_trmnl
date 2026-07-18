@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type Meta, type Status } from "../api";
 import type { ActionOpts } from "../App";
-import { Card, Toggle, Segmented, Button } from "../ui";
+import { Card, Toggle, Segmented, Button, useToast } from "../ui";
 import { titleCase } from "../format";
 
 interface Props {
@@ -12,6 +12,7 @@ interface Props {
 }
 
 export function Controls({ deviceId, status, meta, runAction }: Props) {
+  const toast = useToast();
   const [interval, setIntervalValue] = useState<number>(60);
 
   useEffect(() => {
@@ -139,10 +140,20 @@ export function Controls({ deviceId, status, meta, runAction }: Props) {
           </Button>
           <Button
             onClick={() =>
-              runAction(() => api.skip(deviceId), {
-                success: "Skipped next item",
-                refreshPreview: true,
-              })
+              runAction(
+                async () => {
+                  const r = await api.skip(deviceId);
+                  toast.push(
+                    r.regenerated
+                      ? "Skipped - loading a new image"
+                      : r.skipped
+                        ? "Skipped the next item"
+                        : "Nothing queued to skip",
+                    r.skipped || r.regenerated ? "success" : "info",
+                  );
+                },
+                { refreshPreview: true },
+              )
             }
           >
             Skip

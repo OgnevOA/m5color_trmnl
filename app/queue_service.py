@@ -350,7 +350,13 @@ async def clear_pending(db: Database, device_id: str) -> int:
 
 
 async def skip_next(db: Database, device_id: str) -> bool:
-    """Skip the next ready item (preferred) or the next pending item."""
+    """Skip the next ready item (preferred) or the next pending item.
+
+    The item is marked ``skipped`` so it is no longer served to the device or
+    returned as the next-ready preview. Its rendered row is intentionally left
+    in place: image ids are ``MAX(seq)+1``, so deleting it would let the id be
+    reused by the next render. Pruning removes it in due course.
+    """
     row = await db.fetchone(
         """SELECT id FROM queue_items
            WHERE device_id = ? AND status = 'ready'

@@ -1226,6 +1226,27 @@ class Services:
         self._notify_worker()
         return item_id
 
+    async def skip_next(self) -> dict:
+        """Discard the upcoming queued frame; refill it for periodic modes.
+
+        Marks the next ready/pending item skipped and drops its rendered image
+        (so it is neither drawn nor previewed). For a periodic mode a fresh item
+        is then generated so the panel's "Up next" shows something new;
+        static/carousel modes are simply left one frame shorter.
+
+        Returns ``{skipped, regenerated, queued_item_id}``.
+        """
+        skipped = await queue_service.skip_next(self.db, self.settings.device_id)
+        cfg = await self.get_device_settings()
+        queued_item_id: Optional[int] = None
+        if self._is_periodic(cfg.mode):
+            queued_item_id = await self.generate_for_active_mode(force=True)
+        return {
+            "skipped": skipped,
+            "regenerated": queued_item_id is not None,
+            "queued_item_id": queued_item_id,
+        }
+
     async def clear_queue(self) -> int:
         return await queue_service.clear_pending(self.db, self.settings.device_id)
 

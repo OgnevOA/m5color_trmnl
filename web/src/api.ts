@@ -152,7 +152,10 @@ export const api = {
   setCollageCount: (id: string, count: number) =>
     post(`/devices/${id}/collage_count`, { count }),
   next: (id: string) => post(`/devices/${id}/next`),
-  skip: (id: string) => post(`/devices/${id}/skip`),
+  skip: (id: string) =>
+    post<{ ok: boolean; skipped: boolean; regenerated: boolean }>(
+      `/devices/${id}/skip`,
+    ),
   clear: (id: string) => post(`/devices/${id}/clear`),
   sendText: (id: string, text: string) => post(`/devices/${id}/text`, { text }),
   sendQr: (id: string, payload: string) => post(`/devices/${id}/qr`, { payload }),

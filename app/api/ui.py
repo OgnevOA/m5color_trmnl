@@ -17,7 +17,6 @@ from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
-from .. import queue_service
 from ..modes.artist import ArtistMode
 from ..modes.registry import available_modes
 from ..services import PHOTO_COLLAGE_MAX, Services
@@ -257,8 +256,8 @@ async def next_item(request: Request, device_id: str) -> JSONResponse:
 @router.post("/devices/{device_id}/skip")
 async def skip_item(request: Request, device_id: str) -> JSONResponse:
     services = _services(request, device_id)
-    skipped = await queue_service.skip_next(services.db, device_id)
-    return JSONResponse({"ok": skipped})
+    result = await services.skip_next()
+    return JSONResponse({"ok": result["skipped"] or result["regenerated"], **result})
 
 
 @router.post("/devices/{device_id}/clear")
