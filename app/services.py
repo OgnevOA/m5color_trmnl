@@ -700,34 +700,39 @@ class Services:
         return data, image_id
 
     async def _resolve_current_rendered(self):
-        """The rendered frame the device is showing (or None).
+        """The rendered frame physically on the device (or None).
 
-        Prefers the device-confirmed ``last_image_id`` (reported by the firmware
-        after a successful draw), so once the device checks in this matches the
-        physical panel exactly. Before that first confirmation it falls back to
-        the most recently *sent* (displayed) frame so the panel still has
-        something to show. Both ``current.png`` and the status snapshot resolve
-        through here, so the id the panel stars always matches the shown frame.
+        This is the most recent frame the server handed out with a ``draw``
+        action -- its ``displayed_at`` is stamped at send time. The device's own
+        reported ``last_image_id`` is deliberately NOT preferred here: the
+        firmware POSTs the *previous* frame's id at wake, before drawing the new
+        one, so it lags a whole wake behind what is actually on the panel.
+        Ordering by ``displayed_at`` also handles carousel re-sends (an older
+        image shown again becomes "current"). Both ``current.png`` and the status
+        snapshot resolve through here, so the id the panel stars always matches
+        the shown frame.
         """
+        row = await self.db.fetchone(
+            """SELECT image_id FROM rendered_images
+               WHERE device_id = ? AND displayed_at IS NOT NULL
+               ORDER BY displayed_at DESC, seq DESC LIMIT 1""",
+            (self.settings.device_id,),
+        )
+        if row is not None:
+            rendered = await queue_service.get_rendered_image(
+                self.db, self.settings.device_id, row["image_id"]
+            )
+            if rendered is not None:
+                return rendered
+        # Nothing has been sent for drawing yet: fall back to whatever frame the
+        # device last reported (if any).
         dev = await self.db.fetchone(
             "SELECT last_image_id FROM devices WHERE device_id = ?",
             (self.settings.device_id,),
         )
         if dev and dev["last_image_id"]:
-            rendered = await queue_service.get_rendered_image(
-                self.db, self.settings.device_id, dev["last_image_id"]
-            )
-            if rendered is not None:
-                return rendered
-        row = await self.db.fetchone(
-            """SELECT image_id FROM rendered_images
-               WHERE device_id = ? AND displayed_at IS NOT NULL
-               ORDER BY seq DESC LIMIT 1""",
-            (self.settings.device_id,),
-        )
-        if row is not None:
             return await queue_service.get_rendered_image(
-                self.db, self.settings.device_id, row["image_id"]
+                self.db, self.settings.device_id, dev["last_image_id"]
             )
         return None
 
